@@ -17,6 +17,7 @@ import org.junit.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import ghidra.app.services.ProgramManager;
 import ghidra.program.database.sourcemap.SourceFile;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.sourcemap.SourceFileManager;
@@ -26,6 +27,14 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 
 public class SourceMetadataToolProviderIntegrationTest extends RevaIntegrationTestBase {
+
+    private void openProgramForMcp() throws Exception {
+        env.open(program);
+        ProgramManager programManager = tool.getService(ProgramManager.class);
+        assertNotNull("ProgramManager service", programManager);
+        programManager.openProgram(program);
+        serverManager.programOpened(program, tool);
+    }
 
     @Test
     public void testListAndResolveGenericSourceMappings() throws Exception {
@@ -42,6 +51,8 @@ public class SourceMetadataToolProviderIntegrationTest extends RevaIntegrationTe
         finally {
             program.endTransaction(tx, true);
         }
+
+        openProgramForMcp();
 
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
