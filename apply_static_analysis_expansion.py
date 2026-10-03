@@ -87,7 +87,7 @@ def main() -> int:
     text = replace_once(text, old_core, new_core, "CORE_ANALYSIS provider list")
 
     old_advanced = """                return List.of(\n                    new CallGraphToolProvider(server),\n                    new DataFlowToolProvider(server),\n                    new VtableToolProvider(server));"""
-    new_advanced = """                return List.of(\n                    new CallGraphToolProvider(server),\n                    new DataFlowToolProvider(server),\n                    new VtableToolProvider(server),\n                    new ControlFlowToolProvider(server),\n                    new PcodeToolProvider(server),\n                    new SourceMetadataToolProvider(server));"""
+    new_advanced = """                return List.of(\n                    new CallGraphToolProvider(server),\n                    new DataFlowToolProvider(server),\n                    new VtableToolProvider(server),\n                    new ControlFlowToolProvider(server),\n                    new PcodeToolProvider(server),\n                    new SourceMetadataToolProvider(server),\\n                    new StackAbiToolProvider(server));"""
     text = replace_once(text, old_advanced, new_advanced, "ADVANCED_ANALYSIS provider list")
 
     manager.write_text(text)
