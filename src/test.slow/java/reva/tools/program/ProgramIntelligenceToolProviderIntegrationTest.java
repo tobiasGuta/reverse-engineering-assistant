@@ -17,6 +17,7 @@ import org.junit.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import ghidra.app.services.ProgramManager;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
@@ -24,8 +25,19 @@ import reva.RevaIntegrationTestBase;
 
 public class ProgramIntelligenceToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
+    private void openProgramForMcp() throws Exception {
+        // RevaProgramManager discovers programs through Ghidra's ProgramManager.
+        // Merely notifying McpServerManager is not enough in headed integration tests.
+        env.open(program);
+        ProgramManager programManager = tool.getService(ProgramManager.class);
+        assertNotNull("ProgramManager service", programManager);
+        programManager.openProgram(program);
+        serverManager.programOpened(program, tool);
+    }
+
     @Test
     public void testProgramOverviewReturnsBoundedStructuralFacts() throws Exception {
+        openProgramForMcp();
         String path = program.getDomainFile().getPathname();
 
         withMcpClient(createMcpTransport(), client -> {
