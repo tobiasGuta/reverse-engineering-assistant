@@ -44,7 +44,7 @@ import reva.util.SchemaUtil;
 public class ControlFlowToolProvider extends AbstractToolProvider {
     private static final int DEFAULT_MAX_BLOCKS = 256;
     private static final int HARD_MAX_BLOCKS = 1024;
-    private static final int HARD_MAX_EDGES_PER_BLOCK = 64;
+    private static final int HARD_MAX_REFERENCES_PER_BLOCK = 64;
     private static final int MAX_BLOCK_SCAN = 4096;
 
     public ControlFlowToolProvider(McpSyncServer server) {
@@ -69,8 +69,9 @@ public class ControlFlowToolProvider extends AbstractToolProvider {
             .name("get-function-cfg")
             .title("Get Function Control Flow")
             .description("Get a bounded, read-only basic-block control-flow graph for a function, " +
-                "including block ranges, branch edges, flow types, internal/external destinations, " +
-                "and cyclomatic complexity. Use when decompilation is incomplete, optimized, or " +
+                "including block ranges, CFG successors, call references, flow types, " +
+                "internal/external destinations, and cyclomatic complexity. Calls are reported " +
+                "separately from intraprocedural CFG edges. Use when decompilation is incomplete, optimized, or " +
                 "when exact branch structure matters.")
             .inputSchema(createSchema(properties, List.of("programPath", "function")))
             .build();
@@ -110,7 +111,8 @@ public class ControlFlowToolProvider extends AbstractToolProvider {
                 int returnCount = Math.min(maxBlocks, allBlocks.size());
                 List<Map<String, Object>> blocks = new ArrayList<>(returnCount);
                 int returnedEdgeCount = 0;
-                boolean edgesTruncated = false;
+                int returnedCallCount = 0;
+                boolean referencesTruncated = false;
 
                 for (int i = 0; i < returnCount; i++) {
                     CodeBlock block = allBlocks.get(i);
@@ -121,14 +123,24 @@ public class ControlFlowToolProvider extends AbstractToolProvider {
                     blockInfo.put("size", block.getNumAddresses());
                     blockInfo.put("flowType", block.getFlowType().toString());
 
-                    List<Map<String, Object>> destinations = new ArrayList<>();
+                    List<Map<String, Object>> successors = new ArrayList<>();
+                    List<Map<String, Object>> calls = new ArrayList<>();
                     CodeBlockReferenceIterator refs = block.getDestinations(TaskMonitor.DUMMY);
-                    int blockEdgeCount = 0;
+                    int successorCount = 0;
+                    int callCount = 0;
+                    int returnedReferenceCount = 0;
                     while (refs.hasNext()) {
                         CodeBlockReference ref = refs.next();
-                        blockEdgeCount++;
-                        if (destinations.size() >= HARD_MAX_EDGES_PER_BLOCK) {
-                            edgesTruncated = true;
+                        boolean isCall = ref.getFlowType().isCall();
+                        if (isCall) {
+                            callCount++;
+                        }
+                        else {
+                            successorCount++;
+                        }
+
+                        if (returnedReferenceCount >= HARD_MAX_REFERENCES_PER_BLOCK) {
+                            referencesTruncated = true;
                             continue;
                         }
 
@@ -143,12 +155,23 @@ public class ControlFlowToolProvider extends AbstractToolProvider {
                             edge.put("fromInstruction", AddressUtil.formatAddress(referent));
                         }
                         edge.put("flowType", ref.getFlowType().toString());
-                        destinations.add(edge);
+
+                        if (isCall) {
+                            calls.add(edge);
+                        }
+                        else {
+                            successors.add(edge);
+                        }
+                        returnedReferenceCount++;
                     }
-                    returnedEdgeCount += destinations.size();
-                    blockInfo.put("destinationCount", blockEdgeCount);
-                    blockInfo.put("destinations", destinations);
-                    blockInfo.put("destinationsTruncated", blockEdgeCount > destinations.size());
+                    returnedEdgeCount += successors.size();
+                    returnedCallCount += calls.size();
+                    blockInfo.put("successorCount", successorCount);
+                    blockInfo.put("successors", successors);
+                    blockInfo.put("callCount", callCount);
+                    blockInfo.put("calls", calls);
+                    blockInfo.put("referencesTruncated",
+                        successorCount + callCount > returnedReferenceCount);
                     blocks.add(blockInfo);
                 }
 
@@ -161,7 +184,11 @@ public class ControlFlowToolProvider extends AbstractToolProvider {
                 result.put("returnedBlockCount", blocks.size());
                 result.put("blocks", blocks);
                 result.put("returnedEdgeCount", returnedEdgeCount);
-                result.put("truncated", scanTruncated || allBlocks.size() > blocks.size() || edgesTruncated);
+                result.put("returnedCallCount", returnedCallCount);
+                result.put("edgeDefinition",
+                    "returnedEdgeCount counts non-call CFG successors; call references are reported separately");
+                result.put("truncated",
+                    scanTruncated || allBlocks.size() > blocks.size() || referencesTruncated);
                 if (scanTruncated) {
                     result.put("note", "Basic-block scan stopped at the safety cap of " + MAX_BLOCK_SCAN +
                         " blocks; counts may be incomplete.");
