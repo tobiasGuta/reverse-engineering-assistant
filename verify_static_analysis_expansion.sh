@@ -41,8 +41,12 @@ git diff --check
 # ReVa's current lockfile pins JPype1 1.5.2. It has a prebuilt CPython 3.13
 # Linux wheel but no CPython 3.14 wheel, so Fedora 44's system Python 3.14
 # falls back to a native source build. Use an isolated uv-managed 3.13
-# environment for this transport-only regression check. uv downloads 3.13
-# automatically if it is not already available.
+# environment for this transport-only regression check. Some uv installations
+# configure managed Python downloads as "manual", so explicitly ensure 3.13
+# is installed before creating/running the test environment.
+printf '\nEnsuring uv-managed CPython 3.13 is available...\n'
+uv python install 3.13
+
 printf '\nRunning Python MCP transport check with CPython 3.13...\n'
 UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_mcp_tools.py -q
