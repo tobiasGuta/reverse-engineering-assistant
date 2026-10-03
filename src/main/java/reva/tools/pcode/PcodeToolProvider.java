@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.block.BasicBlockModel;
 import ghidra.program.model.block.CodeBlock;
 import ghidra.program.model.listing.Function;
@@ -123,7 +124,8 @@ public class PcodeToolProvider extends AbstractToolProvider {
                             return createErrorResult("No instruction contains " +
                                 AddressUtil.formatAddress(targetAddress));
                         }
-                        instructions = listing.getInstructions(instruction.getAddress(), true);
+                        instructions = listing.getInstructions(
+                            new AddressSet(instruction.getAddress(), instruction.getMaxAddress()), true);
                         maxInstructions = 1;
                         scopeStart = AddressUtil.formatAddress(instruction.getAddress());
                         scopeEnd = AddressUtil.formatAddress(instruction.getMaxAddress());
@@ -153,7 +155,11 @@ public class PcodeToolProvider extends AbstractToolProvider {
             boolean truncated = false;
 
             while (instructions.hasNext()) {
-                if (visitedInstructions >= maxInstructions || operationCount >= maxOps) {
+                if (visitedInstructions >= maxInstructions) {
+                    truncated = true;
+                    break;
+                }
+                if (operationCount >= maxOps) {
                     truncated = true;
                     break;
                 }
@@ -180,8 +186,7 @@ public class PcodeToolProvider extends AbstractToolProvider {
                 instructionInfo.put("pcodeCount", pcode.size());
                 instructionData.add(instructionInfo);
 
-                if (operationCount >= maxOps) {
-                    truncated = true;
+                if (truncated) {
                     break;
                 }
             }

@@ -111,4 +111,57 @@ public class PcodeToolProviderIntegrationTest extends RevaIntegrationTestBase {
                 opcodes.contains("CBRANCH"));
         });
     }
+
+    @Test
+    public void testInstructionScopeDoesNotReportFalseTruncation() throws Exception {
+        String path = createBranchFunction();
+
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+            CallToolResult result = client.callTool(new CallToolRequest("get-pcode",
+                Map.of(
+                    "programPath", path,
+                    "target", "pcode_test",
+                    "scope", "instruction",
+                    "maxInstructions", 1,
+                    "maxOps", 1024)));
+            assertMcpResultNotError(result, "get-pcode");
+
+            JsonNode json = parseJsonContent(((TextContent) result.content().get(0)).text());
+            assertEquals("instruction", json.get("scope").asText());
+            assertEquals(1, json.get("instructionCount").asInt());
+            assertFalse("complete instruction scope must not be marked truncated",
+                json.get("truncated").asBoolean());
+            assertFalse("non-truncated result should not carry a truncation note",
+                json.has("note"));
+        });
+    }
+
+    @Test
+    public void testInstructionScopeReportsTrueOpTruncation() throws Exception {
+        String path = createBranchFunction();
+        Address start = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000100);
+        assertTrue("fixture entry instruction must lift to multiple P-code ops",
+            program.getListing().getInstructionAt(start).getPcode().length > 1);
+
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+            CallToolResult result = client.callTool(new CallToolRequest("get-pcode",
+                Map.of(
+                    "programPath", path,
+                    "target", "pcode_test",
+                    "scope", "instruction",
+                    "maxInstructions", 1,
+                    "maxOps", 1)));
+            assertMcpResultNotError(result, "get-pcode");
+
+            JsonNode json = parseJsonContent(((TextContent) result.content().get(0)).text());
+            assertEquals(1, json.get("instructionCount").asInt());
+            assertEquals(1, json.get("operationCount").asInt());
+            assertTrue("omitted P-code ops must be marked truncated",
+                json.get("truncated").asBoolean());
+            assertTrue("truncated result should explain the safety bound",
+                json.hasNonNull("note"));
+        });
+    }
 }
