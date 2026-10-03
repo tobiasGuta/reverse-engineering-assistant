@@ -17,6 +17,11 @@ else
   exit 2
 fi
 
+if ! command -v uv >/dev/null 2>&1; then
+  echo "error: uv is required for the Python MCP transport check" >&2
+  exit 2
+fi
+
 printf 'Using GHIDRA_INSTALL_DIR=%s\n' "$GHIDRA_INSTALL_DIR"
 printf 'Using Gradle command: %s\n' "${GRADLE_CMD[*]}"
 java -version
@@ -33,7 +38,14 @@ git diff --check
   --tests '*SourceMetadataToolProviderIntegrationTest' \
   --info
 
-uv run pytest tests/test_mcp_tools.py -q
+# ReVa's current lockfile pins JPype1 1.5.2. It has a prebuilt CPython 3.13
+# Linux wheel but no CPython 3.14 wheel, so Fedora 44's system Python 3.14
+# falls back to a native source build. Use an isolated uv-managed 3.13
+# environment for this transport-only regression check. uv downloads 3.13
+# automatically if it is not already available.
+printf '\nRunning Python MCP transport check with CPython 3.13...\n'
+UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
+  uv run --python 3.13 --frozen pytest tests/test_mcp_tools.py -q
 
 echo
 printf '%s\n' 'Static-analysis expansion verification completed.'
