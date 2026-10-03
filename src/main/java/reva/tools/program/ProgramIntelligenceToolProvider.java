@@ -22,6 +22,7 @@ import java.util.Map;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
@@ -98,11 +99,35 @@ public class ProgramIntelligenceToolProvider extends AbstractToolProvider {
             result.put("pointerSize", program.getDefaultPointerSize());
 
             Address imageBase = program.getImageBase();
-            Address minAddress = program.getMinAddress();
-            Address maxAddress = program.getMaxAddress();
+            AddressSpace defaultSpace = program.getAddressFactory().getDefaultAddressSpace();
+            result.put("defaultAddressSpace", defaultSpace.getName());
             if (imageBase != null) {
                 result.put("imageBase", AddressUtil.formatAddress(imageBase));
+                result.put("imageBaseAddressSpace", imageBase.getAddressSpace().getName());
             }
+
+            // Program.getMinAddress()/getMaxAddress() may select an address from a
+            // different memory space based on Ghidra's cross-space ordering. That
+            // makes a bare numeric "maxAddress" misleading for formats that also
+            // create non-loaded/file/external spaces. Report bounds for the default
+            // memory space explicitly instead.
+            MemoryBlock[] blocks = program.getMemory().getBlocks();
+            Address minAddress = null;
+            Address maxAddress = null;
+            for (MemoryBlock block : blocks) {
+                Address start = block.getStart();
+                Address end = block.getEnd();
+                if (!start.getAddressSpace().equals(defaultSpace)) {
+                    continue;
+                }
+                if (minAddress == null || start.compareTo(minAddress) < 0) {
+                    minAddress = start;
+                }
+                if (maxAddress == null || end.compareTo(maxAddress) > 0) {
+                    maxAddress = end;
+                }
+            }
+            result.put("addressBoundsScope", "default-memory-space");
             if (minAddress != null) {
                 result.put("minAddress", AddressUtil.formatAddress(minAddress));
             }
@@ -122,13 +147,13 @@ public class ProgramIntelligenceToolProvider extends AbstractToolProvider {
             result.put("sourceFileCount", sourceFileCount);
             result.put("mappedSourceFileCount", mappedSourceFileCount);
 
-            MemoryBlock[] blocks = program.getMemory().getBlocks();
             List<Map<String, Object>> blockData = new ArrayList<>();
             int returnedBlocks = Math.min(blocks.length, maxBlocks);
             for (int i = 0; i < returnedBlocks; i++) {
                 MemoryBlock block = blocks[i];
                 Map<String, Object> info = new LinkedHashMap<>();
                 info.put("name", block.getName());
+                info.put("addressSpace", block.getStart().getAddressSpace().getName());
                 info.put("start", AddressUtil.formatAddress(block.getStart()));
                 info.put("end", AddressUtil.formatAddress(block.getEnd()));
                 info.put("size", block.getSize());
