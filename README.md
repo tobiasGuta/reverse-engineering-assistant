@@ -6,6 +6,10 @@ This branch contains a **general-purpose, read-only** reverse-engineering expans
 
 Reviewed against upstream ReVa `main` at commit `01a154a8edf233b02a0e7707e2ff5933893c6d53` on 2026-10-03 and designed for Ghidra 12.1.x.
 
+## Verification status
+
+Slice 1 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. The verified path covers normal Gradle tests, the four focused Ghidra integration tests, `buildExtension`, installation into a disposable Ghidra copy, and MCP `tools/list` registration for all five new tools.
+
 ## New MCP tools
 
 ### `get-program-overview`
@@ -76,7 +80,7 @@ Then run:
 /path/to/this-repo/verify_static_analysis_expansion.sh
 ```
 
-The verification script does **not** install the extension into Ghidra. Build/install only after the tests pass and the diff has been reviewed.
+The verification script never modifies the normal workstation Ghidra installation. It builds the extension, installs it into a disposable isolated Ghidra copy for the Python MCP transport check, and removes that scratch copy automatically.
 
 ## Current files
 
@@ -90,7 +94,13 @@ The branch contains:
 
 ## Suggested manual smoke test
 
-After building/installing a development extension, open a known test binary and use `SMOKE_TEST_PROMPT.md`.
+Prepare a persistent development-only Ghidra copy without modifying the stable installation:
+
+```bash
+./prepare_dev_ghidra.sh
+```
+
+Launch the command printed by the script, enable ReVa in that development copy, open a known test binary, and use `SMOKE_TEST_PROMPT.md`. For later rebuilds, use `./prepare_dev_ghidra.sh --refresh`.
 
 ## Deliberately deferred
 
