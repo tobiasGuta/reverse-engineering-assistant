@@ -102,6 +102,13 @@ Prepare a persistent development-only Ghidra copy without modifying the stable i
 
 Launch the command printed by the script, enable ReVa in that development copy, open a known test binary, and use `SMOKE_TEST_PROMPT.md`. For later rebuilds, use `./prepare_dev_ghidra.sh --refresh`.
 
+## Manual smoke-test refinement
+
+The first live Codex/ReVa smoke test on `crackme01` validated that the new tools are useful and bounded. It also exposed two generic contract issues that were corrected:
+
+- program address bounds are now computed explicitly within Ghidra's default memory space, with the address-space scope reported in the response
+- intraprocedural CFG successors are now separated from call references so call targets cannot be mistaken for CFG edges
+
 ## Deliberately deferred
 
 Good later slices include richer generic debug-metadata adapters, stack/ABI inspection, objective function querying, and eventually bounded P-code emulation. Those should be added only when they improve reverse engineering broadly rather than solving one specific challenge.
