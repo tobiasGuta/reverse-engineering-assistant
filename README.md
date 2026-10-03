@@ -8,7 +8,9 @@ Reviewed against upstream ReVa `main` at commit `01a154a8edf233b02a0e7707e2ff593
 
 ## Verification status
 
-Slice 1 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. Slice 2 is implemented on `feat/stack-abi-intelligence` and is awaiting the same local verification path before being frozen.
+Slices 1–2 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. Slice 2 also passed a final read-only live regression on a real x86-64 ELF after the live test had exposed and driven corrections for unresolved ABI normalization, unknown stack-purge sentinels, and single-instruction P-code truncation semantics.
+
+**Slice 2 is frozen as of 2026-10-03.** No further Slice 2 contract changes should be made absent new evidence of a generic correctness or safety defect. See `STACK_ABI_VALIDATION.md` for the frozen invariants and validation record.
 
 ## New MCP tools
 
@@ -122,10 +124,18 @@ Launch the command printed by the script, enable ReVa in that development copy, 
 
 ## Manual smoke-test refinement
 
-The first live Codex/ReVa smoke test on `crackme01` validated that the new tools are useful and bounded. It also exposed two generic contract issues that were corrected:
+The first live Codex/ReVa smoke test on `crackme01` validated that the new tools are useful and bounded. It also exposed two generic Slice 1 contract issues that were corrected:
 
 - program address bounds are now computed explicitly within Ghidra's default memory space, with the address-space scope reported in the response
 - intraprocedural CFG successors are now separated from call references so call targets cannot be mistaken for CFG edges
+
+The first Slice 2 live stack/ABI regression then exposed three generic contract issues that were corrected before freeze:
+
+- unresolved `PrototypeModel` results now preserve a schema-stable `callingConvention` object with explicit unavailable/null facts rather than making fields disappear
+- unknown `Function.getStackPurgeSize()` values are normalized through Ghidra's validity API instead of exposing `Integer.MAX_VALUE` as a semantic purge size
+- complete single-instruction `get-pcode` responses no longer report `truncated: true`; truncation is reported only when requested bounds actually omit data
+
+After those corrections, the complete automated verification path passed and a second real-binary read-only regression confirmed the StackFrame coordinate contract, ABI normalization, P-code truncation semantics, and machine/Ghidra coordinate reconciliation.
 
 ## Deliberately deferred
 
