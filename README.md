@@ -1,4 +1,4 @@
-# ReVa Static Analysis Expansion — Slice 1
+# ReVa Static Analysis Expansion — Slices 1–2
 
 This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
@@ -8,7 +8,7 @@ Reviewed against upstream ReVa `main` at commit `01a154a8edf233b02a0e7707e2ff593
 
 ## Verification status
 
-Slice 1 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. The verified path covers normal Gradle tests, the four focused Ghidra integration tests, `buildExtension`, installation into a disposable Ghidra copy, and MCP `tools/list` registration for all five new tools.
+Slice 1 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. Slice 2 is implemented on `feat/stack-abi-intelligence` and is awaiting the same local verification path before being frozen.
 
 ## New MCP tools
 
@@ -30,6 +30,14 @@ Bounded raw Sleigh P-code for one instruction, a basic block, or a function. Ret
 
 Generic access to Ghidra's `SourceFileManager`. Works with source mappings imported by supported debug formats; there is no DWARF/PDB-specific logic in the MCP contract.
 
+### `get-function-stack-frame`
+
+Read-only access to Ghidra's `StackFrame` model: frame/local/parameter sizes, parameter and return-address offsets, stack direction, defined stack variables, exact `VariableStorage`, and same-coordinate-system byte deltas. The contract explicitly labels all offsets as **Ghidra stack-space offsets** and warns that they are not literal RBP/RSP displacement operands.
+
+### `get-function-abi`
+
+Read-only access to the function signature, parameter and return storage, compiler stack model, and Ghidra `PrototypeModel` calling-convention facts. The tool preserves Ghidra terminology: `stackParameterAlignment` means alignment of individual parameters allocated on the stack and is **not** presented as function-entry or call-site RSP alignment.
+
 ## Safety / architecture
 
 All added tools are read-only. This slice does not add:
@@ -48,7 +56,7 @@ Output is explicitly bounded to avoid flooding MCP context.
 Provider placement when applied to upstream ReVa:
 
 - `get-program-overview` → `CORE_ANALYSIS`
-- CFG, P-code, source metadata → `ADVANCED_ANALYSIS`
+- CFG, P-code, source metadata, stack frame, ABI → `ADVANCED_ANALYSIS`
 
 ## Apply to a clean upstream checkout
 
@@ -86,11 +94,21 @@ The verification script never modifies the normal workstation Ghidra installatio
 
 The branch contains:
 
-- four new ReVa provider implementations
-- four Ghidra integration tests
+- five new ReVa provider implementations
+- five Ghidra integration test classes
 - a guarded application script that wires the providers into upstream ReVa
 - a focused verification script
 - a generic MCP smoke-test prompt
+
+## Apply Slice 2 to an existing Slice 1 checkout
+
+For the current development checkout that already has Slice 1 applied, use the incremental helper rather than re-running the clean-checkout patcher:
+
+```bash
+python3 ./apply_stack_abi_slice.py /mnt/Development/Tools/ReVa-Static-Analysis
+```
+
+The helper refuses to overwrite differing Slice 2 files, requires the Slice 1 provider registrations to already exist, and performs no commit or Ghidra installation.
 
 ## Suggested manual smoke test
 
@@ -111,4 +129,4 @@ The first live Codex/ReVa smoke test on `crackme01` validated that the new tools
 
 ## Deliberately deferred
 
-Good later slices include richer generic debug-metadata adapters, stack/ABI inspection, objective function querying, and eventually bounded P-code emulation. Those should be added only when they improve reverse engineering broadly rather than solving one specific challenge.
+Good later slices include per-instruction stack-depth analysis, richer generic debug-metadata adapters, objective function querying, and eventually bounded P-code emulation. Per-instruction stack depth is intentionally deferred until the simpler StackFrame/PrototypeModel contracts prove stable on real binaries.
