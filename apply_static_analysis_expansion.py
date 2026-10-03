@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the ReVa generic static-analysis expansion to a checked-out ReVa repository.
+"""Apply the ReVa generic static-analysis expansion (Slices 1-2) to a checked-out ReVa repository.
 
 Targets the current upstream layout inspected on 2026-10-03. The script is
 idempotent for the provider-registration edits and refuses to overwrite an
@@ -78,6 +78,7 @@ def main() -> int:
         "import reva.tools.controlflow.ControlFlowToolProvider;\n"
         "import reva.tools.pcode.PcodeToolProvider;\n"
         "import reva.tools.sourcemetadata.SourceMetadataToolProvider;\n"
+        "import reva.tools.stackabi.StackAbiToolProvider;\n"
     )
     text = replace_once(text, old_import, new_import, "provider import")
 
@@ -101,6 +102,8 @@ def main() -> int:
             '    "get-pcode",\n'
             '    "list-source-files",\n'
             '    "get-source-mappings",\n'
+            '    "get-function-stack-frame",\n'
+            '    "get-function-abi",\n'
         )
         text = replace_once(text, old, new, "transport EXPECTED_TOOLS")
         transport_test.write_text(text)
