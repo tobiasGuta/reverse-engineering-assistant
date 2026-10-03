@@ -92,6 +92,16 @@ public class ControlFlowToolProviderIntegrationTest extends RevaIntegrationTestB
             assertTrue("branch function should have multiple basic blocks",
                 json.get("blockCount").asInt() >= 3);
             assertTrue(json.get("blocks").isArray());
+            assertTrue(json.has("returnedEdgeCount"));
+            assertTrue(json.has("returnedCallCount"));
+            assertTrue(json.hasNonNull("edgeDefinition"));
+            for (JsonNode block : json.get("blocks")) {
+                assertTrue(block.has("successorCount"));
+                assertTrue(block.get("successors").isArray());
+                assertTrue(block.has("callCount"));
+                assertTrue(block.get("calls").isArray());
+                assertTrue(block.has("referencesTruncated"));
+            }
             assertTrue(json.has("cyclomaticComplexity"));
             assertTrue("branch function complexity should exceed straight-line code",
                 json.get("cyclomaticComplexity").asInt() >= 2);
