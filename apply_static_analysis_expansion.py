@@ -100,6 +100,7 @@ def main() -> int:
             '    "get-function-cfg",\n'
             '    "get-pcode",\n'
             '    "list-source-files",\n'
+            '    "get-source-mappings",\n'
         )
         text = replace_once(text, old, new, "transport EXPECTED_TOOLS")
         transport_test.write_text(text)
