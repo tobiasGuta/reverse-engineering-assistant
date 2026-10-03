@@ -1,13 +1,87 @@
-# ReVa Reverse-Engineering Experiments
+# ReVa Static Analysis Expansion — Slice 1
 
-This repository tracks our experimental, general-purpose extensions for [ReVa](https://github.com/cyberkaida/reverse-engineering-assistant).
+This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
-The repository was created independently rather than as a GitHub fork with upstream history, so we use it as a development/patch repository against a pinned upstream ReVa revision.
+> Repository note: this GitHub repository was created independently rather than as a GitHub fork, so the branch stores the expansion source and guarded application tooling against a pinned upstream revision.
 
-Current work lives on feature branches. The first branch is:
+Reviewed against upstream ReVa `main` at commit `01a154a8edf233b02a0e7707e2ff5933893c6d53` on 2026-10-03 and designed for Ghidra 12.1.x.
 
-- `feat/static-analysis-expansion` — generic, read-only program intelligence, CFG, P-code, and source-metadata capabilities.
+## New MCP tools
 
-The expansion is reviewed against upstream ReVa commit `01a154a8edf233b02a0e7707e2ff5933893c6d53`.
+### `get-program-overview`
 
-The MCP primitive layer should expose reverse-engineering facts and operations, not challenge-specific flag/password/malware heuristics.
+A compact triage surface for program-level facts: executable format/path/hashes, language/compiler metadata, image bounds, pointer size, function/symbol counts, relocation facts, source-map counts, memory blocks, and entry points.
+
+It intentionally **does not** label binaries as PIE/NX/RELRO/etc. Format-specific conclusions stay with the analyst/model; the tool returns evidence.
+
+### `get-function-cfg`
+
+Bounded intraprocedural basic-block graph with block ranges, flow types, outgoing edges, internal/external destinations, and cyclomatic complexity. Intended as a decompiler fallback and exact-branch view.
+
+### `get-pcode`
+
+Bounded raw Sleigh P-code for one instruction, a basic block, or a function. Returns operations and varnodes but **does not execute or emulate** them.
+
+### `list-source-files` / `get-source-mappings`
+
+Generic access to Ghidra's `SourceFileManager`. Works with source mappings imported by supported debug formats; there is no DWARF/PDB-specific logic in the MCP contract.
+
+## Safety / architecture
+
+All added tools are read-only. This slice does not add:
+
+- native process execution
+- network activity
+- shell execution
+- arbitrary PyGhidra scripting
+- binary patching
+- Ghidra database mutation
+- P-code emulation
+- challenge-specific detectors
+
+Output is explicitly bounded to avoid flooding MCP context.
+
+Provider placement when applied to upstream ReVa:
+
+- `get-program-overview` → `CORE_ANALYSIS`
+- CFG, P-code, source metadata → `ADVANCED_ANALYSIS`
+
+## Apply to a clean upstream checkout
+
+```bash
+git clone https://github.com/cyberkaida/reverse-engineering-assistant.git ReVa-dev
+cd ReVa-dev
+git checkout 01a154a8edf233b02a0e7707e2ff5933893c6d53
+git checkout -b feat/static-analysis-expansion
+
+python3 /path/to/this-repo/apply_static_analysis_expansion.py .
+
+git diff --check
+git diff --stat
+```
+
+Then run:
+
+```bash
+/path/to/this-repo/verify_static_analysis_expansion.sh
+```
+
+The verification script does **not** install the extension into Ghidra. Build/install only after the tests pass and the diff has been reviewed.
+
+## Current files
+
+The branch contains:
+
+- four new ReVa provider implementations
+- four Ghidra integration tests
+- a guarded application script that wires the providers into upstream ReVa
+- a focused verification script
+- a generic MCP smoke-test prompt
+
+## Suggested manual smoke test
+
+After building/installing a development extension, open a known test binary and use `SMOKE_TEST_PROMPT.md`.
+
+## Deliberately deferred
+
+Good later slices include richer generic debug-metadata adapters, stack/ABI inspection, objective function querying, and eventually bounded P-code emulation. Those should be added only when they improve reverse engineering broadly rather than solving one specific challenge.
