@@ -42,6 +42,11 @@ import reva.RevaIntegrationTestBase;
 public class StackAbiToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
     private String createStackAbiFunction() throws Exception {
+        return createStackAbiFunction(true, 16);
+    }
+
+    private String createStackAbiFunction(
+            boolean resolveConvention, int stackPurgeSize) throws Exception {
         Address start = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000200);
         byte[] bytes = {
             (byte) 0x90, // nop
@@ -66,14 +71,16 @@ public class StackAbiToolProviderIntegrationTest extends RevaIntegrationTestBase
 
             // A freshly created synthetic function may retain Ghidra's unknown
             // calling-convention state, in which case Function.getCallingConvention()
-            // correctly returns null. This fixture is intended to exercise the
-            // resolved PrototypeModel contract, so bind it explicitly to the
-            // compiler spec's default convention rather than assuming analysis did so.
-            PrototypeModel defaultConvention =
-                program.getCompilerSpec().getDefaultCallingConvention();
-            assertNotNull("compiler spec should define a default calling convention",
-                defaultConvention);
-            function.setCallingConvention(defaultConvention.getName());
+            // correctly returns null. Resolve it only when the fixture is intended to
+            // exercise PrototypeModel-backed ABI facts.
+            if (resolveConvention) {
+                PrototypeModel defaultConvention =
+                    program.getCompilerSpec().getDefaultCallingConvention();
+                assertNotNull("compiler spec should define a default calling convention",
+                    defaultConvention);
+                function.setCallingConvention(defaultConvention.getName());
+            }
+            function.setStackPurgeSize(stackPurgeSize);
 
             StackFrame frame = function.getStackFrame();
             frame.setReturnAddressOffset(0);
@@ -163,7 +170,8 @@ public class StackAbiToolProviderIntegrationTest extends RevaIntegrationTestBase
             assertTrue(signature.hasNonNull("effectivePrototype"));
             assertTrue(signature.hasNonNull("formalPrototype"));
             assertTrue(signature.hasNonNull("callingConventionName"));
-            assertTrue(signature.has("stackPurgeSize"));
+            assertTrue(signature.get("stackPurgeSizeKnown").asBoolean());
+            assertEquals(16, signature.get("stackPurgeSize").asInt());
 
             JsonNode compilerModel = json.get("compilerModel");
             assertTrue(compilerModel.hasNonNull("compilerSpec"));
@@ -172,6 +180,9 @@ public class StackAbiToolProviderIntegrationTest extends RevaIntegrationTestBase
             assertTrue("resolved test convention should expose a PrototypeModel",
                 json.has("callingConvention"));
             JsonNode convention = json.get("callingConvention");
+            assertTrue(convention.get("resolved").asBoolean());
+            assertTrue(convention.get("unavailableReason").isNull());
+            assertTrue(json.get("callingConventionUnavailable").isNull());
             assertTrue(convention.hasNonNull("name"));
             assertTrue(convention.has("stackParameterAlignment"));
             assertTrue(convention.get("stackParameterAlignmentSemantics").asText()
@@ -191,6 +202,61 @@ public class StackAbiToolProviderIntegrationTest extends RevaIntegrationTestBase
             assertEquals(-1, returnValue.get("ordinal").asInt());
             assertTrue(returnValue.has("storage"));
             assertFalse(json.get("parametersTruncated").asBoolean());
+        });
+    }
+
+    @Test
+    public void testAbiNormalizesUnresolvedConventionAndUnknownStackPurge() throws Exception {
+        String path = createStackAbiFunction(false, Function.UNKNOWN_STACK_DEPTH_CHANGE);
+
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+            CallToolResult result = client.callTool(new CallToolRequest(
+                "get-function-abi",
+                Map.of("programPath", path, "function", "stack_abi_test", "maxParameters", 64)));
+            assertMcpResultNotError(result, "get-function-abi");
+
+            JsonNode json = parseJsonContent(((TextContent) result.content().get(0)).text());
+            JsonNode signature = json.get("signature");
+            assertFalse(signature.get("stackPurgeSizeKnown").asBoolean());
+            assertTrue(signature.has("stackPurgeSize"));
+            assertTrue(signature.get("stackPurgeSize").isNull());
+
+            JsonNode convention = json.get("callingConvention");
+            assertNotNull("callingConvention should remain schema-stable", convention);
+            assertFalse(convention.get("resolved").asBoolean());
+            assertTrue(convention.get("unavailableReason").asText()
+                .contains("no resolved PrototypeModel"));
+            assertTrue(json.get("callingConventionUnavailable").asText()
+                .contains("no resolved PrototypeModel"));
+
+            assertTrue(convention.has("name"));
+            assertTrue(convention.get("name").isNull());
+            assertTrue(convention.has("mergedModel"));
+            assertTrue(convention.get("mergedModel").isNull());
+            assertTrue(convention.has("stackParameterOffset"));
+            assertTrue(convention.get("stackParameterOffset").isNull());
+            assertTrue(convention.has("stackParameterAlignment"));
+            assertTrue(convention.get("stackParameterAlignment").isNull());
+            assertTrue(convention.get("stackParameterAlignmentSemantics").asText()
+                .contains("individual parameters"));
+            assertTrue(convention.has("stackShift"));
+            assertTrue(convention.get("stackShift").isNull());
+            assertFalse(convention.get("extraPopKnown").asBoolean());
+            assertTrue(convention.get("extraPop").isNull());
+
+            for (String key : new String[] {
+                "returnAddressStorage",
+                "potentialInputRegisterStorage",
+                "unaffectedStorage",
+                "killedByCallStorage",
+                "likelyTrashStorage"
+            }) {
+                assertTrue(key + " should be present", convention.get(key).isArray());
+                assertEquals(0, convention.get(key).size());
+                assertEquals(0, convention.get(key + "Count").asInt());
+                assertFalse(convention.get(key + "Truncated").asBoolean());
+            }
         });
     }
 }

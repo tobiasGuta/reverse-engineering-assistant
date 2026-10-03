@@ -204,7 +204,14 @@ public class StackAbiToolProvider extends AbstractToolProvider {
             signature.put("hasCustomVariableStorage", function.hasCustomVariableStorage());
             signature.put("varArgs", function.hasVarArgs());
             signature.put("noReturn", function.hasNoReturn());
-            signature.put("stackPurgeSize", function.getStackPurgeSize());
+            boolean stackPurgeSizeKnown = function.isStackPurgeSizeValid();
+            signature.put("stackPurgeSizeKnown", stackPurgeSizeKnown);
+            if (stackPurgeSizeKnown) {
+                signature.put("stackPurgeSize", function.getStackPurgeSize());
+            }
+            else {
+                signature.put("stackPurgeSize", null);
+            }
             result.put("signature", signature);
 
             Map<String, Object> compilerModel = new LinkedHashMap<>();
@@ -221,8 +228,15 @@ public class StackAbiToolProvider extends AbstractToolProvider {
             compilerModel.put("stackRightJustified", compilerSpec.isStackRightJustified());
             result.put("compilerModel", compilerModel);
 
+            Map<String, Object> convention = new LinkedHashMap<>();
+            convention.put("resolved", model != null);
+            convention.put("stackParameterAlignmentSemantics",
+                "Alignment required for individual parameters allocated on the stack; " +
+                "not a function-entry or call-site stack-pointer alignment guarantee.");
+
+            String conventionUnavailableReason = null;
             if (model != null) {
-                Map<String, Object> convention = new LinkedHashMap<>();
+                convention.put("unavailableReason", null);
                 convention.put("name", model.getName());
                 convention.put("mergedModel", model.isMerged());
                 convention.put("programExtension", model.isProgramExtension());
@@ -231,13 +245,8 @@ public class StackAbiToolProvider extends AbstractToolProvider {
                 convention.put("hasInjection", model.hasInjection());
 
                 Long stackParameterOffset = model.getStackParameterOffset();
-                if (stackParameterOffset != null) {
-                    convention.put("stackParameterOffset", stackParameterOffset);
-                }
+                convention.put("stackParameterOffset", stackParameterOffset);
                 convention.put("stackParameterAlignment", model.getStackParameterAlignment());
-                convention.put("stackParameterAlignmentSemantics",
-                    "Alignment required for individual parameters allocated on the stack; " +
-                    "not a function-entry or call-site stack-pointer alignment guarantee.");
                 convention.put("stackShift", model.getStackshift());
 
                 int extraPop = model.getExtrapop();
@@ -245,6 +254,9 @@ public class StackAbiToolProvider extends AbstractToolProvider {
                 convention.put("extraPopKnown", extraPopKnown);
                 if (extraPopKnown) {
                     convention.put("extraPop", extraPop);
+                }
+                else {
+                    convention.put("extraPop", null);
                 }
 
                 putBoundedVarnodes(convention, "returnAddressStorage",
@@ -257,13 +269,31 @@ public class StackAbiToolProvider extends AbstractToolProvider {
                     model.getKilledByCallList(), program);
                 putBoundedVarnodes(convention, "likelyTrashStorage",
                     model.getLikelyTrash(), program);
-
-                result.put("callingConvention", convention);
             }
             else {
-                result.put("callingConventionUnavailable",
-                    "Ghidra has no resolved PrototypeModel for this function's calling convention.");
+                conventionUnavailableReason =
+                    "Ghidra has no resolved PrototypeModel for this function's calling convention.";
+                convention.put("unavailableReason", conventionUnavailableReason);
+                convention.put("name", null);
+                convention.put("mergedModel", null);
+                convention.put("programExtension", null);
+                convention.put("hasThisPointer", null);
+                convention.put("constructor", null);
+                convention.put("hasInjection", null);
+                convention.put("stackParameterOffset", null);
+                convention.put("stackParameterAlignment", null);
+                convention.put("stackShift", null);
+                convention.put("extraPopKnown", false);
+                convention.put("extraPop", null);
+                putUnavailableBoundedItems(convention, "returnAddressStorage");
+                putUnavailableBoundedItems(convention, "potentialInputRegisterStorage");
+                putUnavailableBoundedItems(convention, "unaffectedStorage");
+                putUnavailableBoundedItems(convention, "killedByCallStorage");
+                putUnavailableBoundedItems(convention, "likelyTrashStorage");
             }
+
+            result.put("callingConvention", convention);
+            result.put("callingConventionUnavailable", conventionUnavailableReason);
 
             Parameter returnValue = function.getReturn();
             result.put("returnValue", serializeParameter(returnValue, program));
@@ -437,6 +467,13 @@ public class StackAbiToolProvider extends AbstractToolProvider {
         target.put(key, items);
         target.put(key + "Count", count);
         target.put(key + "Truncated", count > returned);
+    }
+
+    private static void putUnavailableBoundedItems(
+            Map<String, Object> target, String key) {
+        target.put(key, List.of());
+        target.put(key + "Count", 0);
+        target.put(key + "Truncated", false);
     }
 
     private static void putRegisterName(
