@@ -51,6 +51,12 @@ public class ProgramIntelligenceToolProviderIntegrationTest extends RevaIntegrat
             assertTrue(json.get("language").asText().contains("x86"));
             assertTrue(json.get("memoryBlockCount").asInt() >= 1);
             assertTrue(json.get("memoryBlocks").isArray());
+            assertEquals("default-memory-space", json.get("addressBoundsScope").asText());
+            assertTrue(json.hasNonNull("defaultAddressSpace"));
+            assertTrue(json.hasNonNull("minAddress"));
+            assertTrue(json.hasNonNull("maxAddress"));
+            assertEquals(json.get("defaultAddressSpace").asText(),
+                json.get("memoryBlocks").get(0).get("addressSpace").asText());
             assertTrue(json.get("functionCount").asInt() >= 0);
             assertTrue(json.has("relocationCount"));
             assertTrue(json.has("sourceFileCount"));
