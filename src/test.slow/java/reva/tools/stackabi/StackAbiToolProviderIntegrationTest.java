@@ -22,6 +22,7 @@ import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.data.DWordDataType;
+import ghidra.program.model.lang.PrototypeModel;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.ParameterImpl;
@@ -62,6 +63,17 @@ public class StackAbiToolProviderIntegrationTest extends RevaIntegrationTestBase
                 new AddressSet(start, end),
                 SourceType.USER_DEFINED);
             assertNotNull("synthetic function should be created", function);
+
+            // A freshly created synthetic function may retain Ghidra's unknown
+            // calling-convention state, in which case Function.getCallingConvention()
+            // correctly returns null. This fixture is intended to exercise the
+            // resolved PrototypeModel contract, so bind it explicitly to the
+            // compiler spec's default convention rather than assuming analysis did so.
+            PrototypeModel defaultConvention =
+                program.getCompilerSpec().getDefaultCallingConvention();
+            assertNotNull("compiler spec should define a default calling convention",
+                defaultConvention);
+            function.setCallingConvention(defaultConvention.getName());
 
             StackFrame frame = function.getStackFrame();
             frame.setReturnAddressOffset(0);
