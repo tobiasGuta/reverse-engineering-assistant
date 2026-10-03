@@ -48,6 +48,16 @@ Provider placement when applied to upstream ReVa:
 
 ## Apply to a clean upstream checkout
 
+For the normal Fedora workflow, use the guarded bootstrap helper from this branch:
+
+```bash
+./bootstrap_local_test.sh
+```
+
+It clones upstream ReVa into `/mnt/Development/Tools/ReVa-Static-Analysis`, checks out the reviewed upstream commit, creates a local feature branch, applies the expansion, and runs `git diff --check`. It refuses to overwrite an existing destination and does not install anything into Ghidra.
+
+Manual equivalent:
+
 ```bash
 git clone https://github.com/cyberkaida/reverse-engineering-assistant.git ReVa-dev
 cd ReVa-dev
