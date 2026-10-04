@@ -52,6 +52,11 @@ public class StackExecutionStateToolProviderIntegrationTest
     private static final long TARGET_ADDRESS = 0x01000420L;
 
     private String createStackStateFixture() throws Exception {
+        return createStackStateFixture(true);
+    }
+
+    private String createStackStateFixture(
+            boolean targetPurgeKnown) throws Exception {
         Address mainStart =
             program.getAddressFactory().getDefaultAddressSpace()
                 .getAddress(MAIN_ADDRESS);
@@ -121,6 +126,14 @@ public class StackExecutionStateToolProviderIntegrationTest
                 defaultConvention.getName());
             main.setCallingConvention(
                 defaultConvention.getName());
+
+            // CallDepthChangeInfo intentionally invalidates post-call stack state
+            // when the callee's purge cannot be resolved and the convention leaves
+            // extrapop unknown. For the normal fixture, make the callee's zero purge
+            // explicit so the call fall-through contract is actually testable.
+            if (targetPurgeKnown) {
+                target.setStackPurgeSize(0);
+            }
         }
         finally {
             program.endTransaction(tx, true);
@@ -225,6 +238,40 @@ public class StackExecutionStateToolProviderIntegrationTest
 
         assertDepth(ret.get("depthBefore"), 0);
         assertFalse(ret.get("fallThroughDeltaKnown").asBoolean());
+    }
+
+    @Test
+    public void testUnknownCalleePurgePreservesUnknownPostCallState()
+            throws Exception {
+        String path = createStackStateFixture(false);
+        JsonNode json = callStackState(
+            path,
+            Map.of(
+                "maxInstructions", 64,
+                "registers", List.of("EBP")));
+
+        JsonNode call = findByMnemonic(json, "CALL");
+        assertDepth(call.get("depthBefore"), -36);
+
+        JsonNode fallThrough =
+            call.get("fallThroughDepthBefore");
+        assertFalse(fallThrough.get("known").asBoolean());
+        assertEquals(
+            "unknown",
+            fallThrough.get("status").asText());
+        assertTrue(fallThrough.get("value").isNull());
+
+        assertFalse(
+            call.get("fallThroughDeltaKnown").asBoolean());
+        assertTrue(call.get("fallThroughDelta").isNull());
+
+        JsonNode add = findByMnemonic(json, "ADD");
+        JsonNode addDepth = add.get("depthBefore");
+        assertFalse(addDepth.get("known").asBoolean());
+        assertEquals(
+            "unknown",
+            addDepth.get("status").asText());
+        assertTrue(addDepth.get("value").isNull());
     }
 
     @Test
