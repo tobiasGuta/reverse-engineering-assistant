@@ -10,6 +10,7 @@
 package reva.tools.provenance;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -59,6 +60,8 @@ import reva.util.SchemaUtil;
  * authoritative semantic provenance.</p>
  */
 public class SemanticProvenanceToolProvider extends AbstractToolProvider {
+    private record TokenLineContext(ClangLine line, int tokenIndex) {}
+
     private static final int DEFAULT_DECOMPILER_TIMEOUT_SECS = 30;
     private static final int DEFAULT_MAX_TOKENS = 64;
     private static final int HARD_MAX_TOKENS = 256;
@@ -182,11 +185,13 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                 }
 
                 List<ClangLine> lines = DecompilerUtils.toLines(markup);
+                int displayLineOffset = displayLineOffset(results);
                 List<Map<String, Object>> matches = new ArrayList<>();
                 int matchedCount = 0;
 
                 for (ClangLine line : lines) {
-                    int currentDisplayLine = displayLineNumber(line);
+                    int currentDisplayLine =
+                        displayLineNumber(line, displayLineOffset);
                     if (displayLine != null &&
                         currentDisplayLine != displayLine.intValue()) {
                         continue;
@@ -212,7 +217,8 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                         matchedCount++;
                         if (matches.size() < maxTokens) {
                             matches.add(serializeToken(
-                                token, highFunction, program, line, tokenIndex));
+                                token, highFunction, program, line, tokenIndex,
+                                displayLineOffset));
                         }
                     }
                 }
@@ -224,6 +230,9 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                 result.put("functionAddress",
                     AddressUtil.formatAddress(function.getEntryPoint()));
                 result.put("provenanceSemantics", PROVENANCE_SEMANTICS);
+                result.put("displayLineNumbering",
+                    "1-based line number matching ReVa get-decompilation output.");
+                result.put("displayLineOffsetFromClang", displayLineOffset);
 
                 Map<String, Object> selectors = new LinkedHashMap<>();
                 selectors.put("address", addressText);
@@ -335,6 +344,11 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                         "Decompiler did not return both HighFunction and C-code markup");
                 }
 
+                List<ClangLine> lines = DecompilerUtils.toLines(markup);
+                Map<ClangToken, TokenLineContext> tokenLineContexts =
+                    buildTokenLineContexts(lines);
+                int displayLineOffset = displayLineOffset(results);
+
                 List<PcodeOpAST> callOps = new ArrayList<>();
                 List<String> opcodesAtAddress = new ArrayList<>();
                 Iterator<PcodeOpAST> iterator =
@@ -359,7 +373,8 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                 List<Map<String, Object>> calls = new ArrayList<>();
                 for (PcodeOp callOp : callOps) {
                     calls.add(serializeCall(
-                        callOp, markup, highFunction, program, maxArguments));
+                        callOp, markup, highFunction, program, maxArguments,
+                        tokenLineContexts, displayLineOffset));
                 }
 
                 Map<String, Object> result = new LinkedHashMap<>();
@@ -374,6 +389,9 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                 result.put("instruction", instruction.toString());
                 result.put("flowType", instruction.getFlowType().toString());
                 result.put("provenanceSemantics", PROVENANCE_SEMANTICS);
+                result.put("displayLineNumbering",
+                    "1-based line number matching ReVa get-decompilation output.");
+                result.put("displayLineOffsetFromClang", displayLineOffset);
                 result.put("argumentSemantics",
                     "Arguments are High P-code CALL/CALLIND inputs after input 0 " +
                     "(the call target). relatedDecompilerTokens are direct Varnode " +
@@ -392,7 +410,9 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
 
     private Map<String, Object> serializeCall(
             PcodeOp callOp, ClangTokenGroup markup,
-            HighFunction highFunction, Program program, int maxArguments) {
+            HighFunction highFunction, Program program, int maxArguments,
+            Map<ClangToken, TokenLineContext> tokenLineContexts,
+            int displayLineOffset) {
         Map<String, Object> call = new LinkedHashMap<>();
         call.put("opcode", callOp.getMnemonic());
         call.put("direct", callOp.getOpcode() == PcodeOp.CALL);
@@ -405,7 +425,9 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
         ClangStatement statement = findStatementForOp(markup, callOp);
         if (statement != null) {
             call.put("statementText", statement.toString());
-            call.put("statementLines", statementDisplayLines(statement));
+            call.put("statementLines",
+                statementDisplayLines(
+                    statement, tokenLineContexts, displayLineOffset));
             call.put("statementMinAddress",
                 statement.getMinAddress() != null
                     ? AddressUtil.formatAddress(statement.getMinAddress()) : null);
@@ -442,7 +464,8 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
             List<Map<String, Object>> related =
                 findRelatedDecompilerTokens(
                     statement, argument, highFunction, program,
-                    HARD_MAX_RELATED_TOKENS);
+                    HARD_MAX_RELATED_TOKENS, tokenLineContexts,
+                    displayLineOffset);
             info.put("relatedDecompilerTokens", related);
             info.put("relatedDecompilerTokenCount", relatedCount);
             info.put("relatedDecompilerTokensTruncated",
@@ -514,7 +537,9 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
 
     private static List<Map<String, Object>> findRelatedDecompilerTokens(
             ClangStatement statement, Varnode argument,
-            HighFunction highFunction, Program program, int maxTokens) {
+            HighFunction highFunction, Program program, int maxTokens,
+            Map<ClangToken, TokenLineContext> tokenLineContexts,
+            int displayLineOffset) {
         if (statement == null || argument == null) {
             return List.of();
         }
@@ -538,10 +563,16 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
             }
 
             if (matchKind != null) {
-                ClangLine line = token.getLineParent();
+                TokenLineContext context =
+                    tokenLineContexts.get(token);
+                ClangLine line =
+                    context != null ? context.line() : token.getLineParent();
+                int tokenIndex =
+                    context != null ? context.tokenIndex()
+                        : (line != null ? line.indexOfToken(token) : -1);
                 Map<String, Object> info = serializeToken(
-                    token, highFunction, program, line,
-                    line != null ? line.indexOfToken(token) : -1);
+                    token, highFunction, program, line, tokenIndex,
+                    displayLineOffset);
                 info.put("matchKind", matchKind);
                 related.add(info);
             }
@@ -611,23 +642,48 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
     }
 
     private static List<Integer> statementDisplayLines(
-            ClangStatement statement) {
+            ClangStatement statement,
+            Map<ClangToken, TokenLineContext> tokenLineContexts,
+            int displayLineOffset) {
         Set<Integer> lines = new LinkedHashSet<>();
         Iterator<ClangToken> iterator = statement.tokenIterator(true);
 
         while (iterator.hasNext()) {
-            ClangLine line = iterator.next().getLineParent();
+            ClangToken token = iterator.next();
+            TokenLineContext context =
+                tokenLineContexts.get(token);
+            ClangLine line =
+                context != null ? context.line() : token.getLineParent();
             if (line != null) {
-                lines.add(displayLineNumber(line));
+                lines.add(displayLineNumber(line, displayLineOffset));
             }
         }
 
         return new ArrayList<>(lines);
     }
 
+    private static Map<ClangToken, TokenLineContext> buildTokenLineContexts(
+            List<ClangLine> lines) {
+        Map<ClangToken, TokenLineContext> contexts =
+            new IdentityHashMap<>();
+
+        for (ClangLine line : lines) {
+            List<ClangToken> tokens = line.getAllTokens();
+            for (int tokenIndex = 0;
+                    tokenIndex < tokens.size(); tokenIndex++) {
+                contexts.put(
+                    tokens.get(tokenIndex),
+                    new TokenLineContext(line, tokenIndex));
+            }
+        }
+
+        return contexts;
+    }
+
     private static Map<String, Object> serializeToken(
             ClangToken token, HighFunction highFunction,
-            Program program, ClangLine line, int lineTokenIndex) {
+            Program program, ClangLine line, int lineTokenIndex,
+            int displayLineOffset) {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("text", token.getText());
         info.put("tokenClass", token.getClass().getSimpleName());
@@ -635,7 +691,8 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
 
         if (line != null) {
             info.put("clangLineNumber", line.getLineNumber());
-            info.put("displayLineNumber", displayLineNumber(line));
+            info.put("displayLineNumber",
+                displayLineNumber(line, displayLineOffset));
             info.put("lineTokenIndex", lineTokenIndex);
             info.put("lineText", renderLine(line));
         }
@@ -880,11 +937,31 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
         return text.toString();
     }
 
-    private static int displayLineNumber(ClangLine line) {
-        // ReVa get-decompilation numbers DecompiledFunction.getC(), which includes
-        // the decompiler's leading blank line. The stock provider maps display
-        // line D to ClangLine D-1.
-        return line.getLineNumber() + 1;
+    private static int displayLineNumber(
+            ClangLine line, int displayLineOffset) {
+        return line.getLineNumber() + displayLineOffset;
+    }
+
+    private static int displayLineOffset(
+            DecompileResults results) {
+        if (results == null ||
+            results.getDecompiledFunction() == null) {
+            return 0;
+        }
+
+        String decompilation =
+            results.getDecompiledFunction().getC();
+        if (decompilation == null || decompilation.isEmpty()) {
+            return 0;
+        }
+
+        // PrettyPrinter ClangLine numbering starts at the first rendered C line.
+        // ReVa get-decompilation numbers the actual DecompiledFunction.getC()
+        // text. Some Ghidra/decompiler outputs begin with a blank line and some
+        // do not, so derive the offset from the actual text instead of assuming
+        // a permanent +1.
+        return decompilation.startsWith("\n") ||
+            decompilation.startsWith("\r\n") ? 1 : 0;
     }
 
     private DecompInterface createConfiguredDecompiler(

@@ -53,18 +53,16 @@ public class SemanticProvenanceToolProviderIntegrationTest
             program.getAddressFactory().getDefaultAddressSpace()
                 .getAddress(TRANSFORM_ADDRESS);
 
-        // main:
+        // main(int seed):
         //   push rbp
         //   mov  rbp,rsp
-        //   mov  edi,0xb
-        //   call transform
+        //   call transform      // seed remains in EDI
         //   pop  rbp
         //   ret
         byte[] mainBytes = {
             (byte) 0x55,
             (byte) 0x48, (byte) 0x89, (byte) 0xe5,
-            (byte) 0xbf, (byte) 0x0b, (byte) 0x00, (byte) 0x00, (byte) 0x00,
-            (byte) 0xe8, (byte) 0x12, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+            (byte) 0xe8, (byte) 0x17, (byte) 0x00, (byte) 0x00, (byte) 0x00,
             (byte) 0x5d,
             (byte) 0xc3
         };
@@ -152,6 +150,13 @@ public class SemanticProvenanceToolProviderIntegrationTest
             main.setReturnType(
                 DWordDataType.dataType,
                 SourceType.USER_DEFINED);
+            main.addParameter(
+                new ParameterImpl(
+                    "seed",
+                    DWordDataType.dataType,
+                    program,
+                    SourceType.USER_DEFINED),
+                SourceType.USER_DEFINED);
         }
         finally {
             program.endTransaction(tx, true);
@@ -166,6 +171,43 @@ public class SemanticProvenanceToolProviderIntegrationTest
         serverManager.programOpened(program, tool);
 
         return program.getDomainFile().getPathname();
+    }
+
+    private int findDecompilationLineContaining(
+            String path, String needle) throws Exception {
+        return withMcpClient(
+            createMcpTransport(),
+            (McpClientFunction<Integer>) client -> {
+                client.initialize();
+                CallToolResult result =
+                    client.callTool(new CallToolRequest(
+                        "get-decompilation",
+                        Map.of(
+                            "programPath", path,
+                            "functionNameOrAddress", "main")));
+                assertMcpResultNotError(
+                    result, "get-decompilation");
+
+                JsonNode json = parseJsonContent(
+                    ((TextContent) result.content().get(0)).text());
+                String decompilation =
+                    json.get("decompilation").asText();
+
+                for (String line : decompilation.split("\\n")) {
+                    int tab = line.indexOf('\t');
+                    if (tab <= 0) {
+                        continue;
+                    }
+                    String body = line.substring(tab + 1);
+                    if (body.contains(needle)) {
+                        return Integer.parseInt(
+                            line.substring(0, tab).trim());
+                    }
+                }
+
+                fail("Could not find decompilation line containing " + needle);
+                return -1;
+            });
     }
 
     private JsonNode findCallToken(String path) throws Exception {
@@ -231,6 +273,12 @@ public class SemanticProvenanceToolProviderIntegrationTest
         JsonNode callToken = findCallToken(path);
         int displayLine =
             callToken.get("displayLineNumber").asInt();
+        int decompilationLine =
+            findDecompilationLineContaining(path, "transform");
+
+        assertEquals(
+            "provenance display line must match get-decompilation numbering",
+            decompilationLine, displayLine);
 
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
@@ -303,6 +351,13 @@ public class SemanticProvenanceToolProviderIntegrationTest
             assertTrue(
                 call.get("statementText").asText()
                     .contains("transform"));
+            assertTrue(
+                "call-site statement should retain display-line context",
+                call.get("statementLines").isArray() &&
+                call.get("statementLines").size() > 0);
+            assertEquals(
+                findDecompilationLineContaining(path, "transform"),
+                call.get("statementLines").get(0).asInt());
             assertTrue(call.get("argumentCount").asInt() >= 1);
             assertFalse(call.get("argumentsTruncated").asBoolean());
 
@@ -325,6 +380,25 @@ public class SemanticProvenanceToolProviderIntegrationTest
             assertTrue(argument.get("relatedDecompilerTokens").isArray());
             assertTrue(argument.has("relatedDecompilerTokenCount"));
             assertTrue(argument.has("relatedDecompilerTokensTruncated"));
+            assertTrue(
+                "direct parameter argument should expose at least one related token",
+                argument.get("relatedDecompilerTokenCount").asInt() > 0);
+
+            for (JsonNode related :
+                    argument.get("relatedDecompilerTokens")) {
+                assertTrue(
+                    "related token should keep its Clang line number",
+                    related.hasNonNull("clangLineNumber"));
+                assertTrue(
+                    "related token should keep get-decompilation display line",
+                    related.hasNonNull("displayLineNumber"));
+                assertTrue(
+                    "related token should keep contextual line text",
+                    related.hasNonNull("lineText"));
+                assertTrue(
+                    "related token should keep its line token index",
+                    related.get("lineTokenIndex").asInt() >= 0);
+            }
 
             assertTrue(
                 json.get("argumentSemantics").asText()
