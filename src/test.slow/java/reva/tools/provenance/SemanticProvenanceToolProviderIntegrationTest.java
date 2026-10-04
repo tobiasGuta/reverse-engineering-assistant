@@ -17,64 +17,158 @@ import org.junit.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.services.ProgramManager;
+import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.data.DWordDataType;
+import ghidra.program.model.lang.PrototypeModel;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.FunctionManager;
+import ghidra.program.model.listing.ParameterImpl;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.util.task.TaskMonitor;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
-import reva.AnalyzedFixtureSupport;
 import reva.RevaIntegrationTestBase;
 
 /**
- * Exercises the semantic-provenance tools against the existing analyzed
- * data-flow fixture. Its main function calls transform(11), giving the test a
- * stable direct call, one concrete argument, decompiler markup, High P-code,
- * and machine-address provenance in one small real binary.
+ * Exercises the semantic-provenance tools against a self-contained synthetic
+ * x86-64 program. The fixture deliberately avoids Git LFS dependencies while
+ * still providing a real direct call, one concrete argument, decompiler markup,
+ * High P-code, SSA varnodes, and machine-address provenance.
  */
 public class SemanticProvenanceToolProviderIntegrationTest
         extends RevaIntegrationTestBase {
 
-    private static final String FIXTURE = "test_dataflow_x86_64";
+    private static final long MAIN_ADDRESS = 0x01000300L;
+    private static final long TRANSFORM_ADDRESS = 0x01000320L;
 
-    private record FunctionRef(String name, String address) {}
+    private String createSemanticFixture() throws Exception {
+        Address mainStart =
+            program.getAddressFactory().getDefaultAddressSpace()
+                .getAddress(MAIN_ADDRESS);
+        Address transformStart =
+            program.getAddressFactory().getDefaultAddressSpace()
+                .getAddress(TRANSFORM_ADDRESS);
 
-    private FunctionRef resolveFunction(
-            String path, String baseName) throws Exception {
-        return withMcpClient(
-            createMcpTransport(),
-            (McpClientFunction<FunctionRef>) client -> {
-                client.initialize();
-                CallToolResult result =
-                    client.callTool(new CallToolRequest(
-                        "get-symbols",
-                        Map.of(
-                            "programPath", path,
-                            "maxCount", 500,
-                            "filterDefaultNames", true)));
-                assertMcpResultNotError(
-                    result, "get-symbols for " + baseName);
+        // main:
+        //   push rbp
+        //   mov  rbp,rsp
+        //   mov  edi,0xb
+        //   call transform
+        //   pop  rbp
+        //   ret
+        byte[] mainBytes = {
+            (byte) 0x55,
+            (byte) 0x48, (byte) 0x89, (byte) 0xe5,
+            (byte) 0xbf, (byte) 0x0b, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+            (byte) 0xe8, (byte) 0x12, (byte) 0x00, (byte) 0x00, (byte) 0x00,
+            (byte) 0x5d,
+            (byte) 0xc3
+        };
 
-                JsonNode json = parseJsonContent(
-                    ((TextContent) result.content().get(0)).text());
+        // transform(int seed):
+        //   push rbp
+        //   mov  rbp,rsp
+        //   mov  eax,edi
+        //   add  eax,7
+        //   pop  rbp
+        //   ret
+        byte[] transformBytes = {
+            (byte) 0x55,
+            (byte) 0x48, (byte) 0x89, (byte) 0xe5,
+            (byte) 0x89, (byte) 0xf8,
+            (byte) 0x83, (byte) 0xc0, (byte) 0x07,
+            (byte) 0x5d,
+            (byte) 0xc3
+        };
 
-                for (JsonNode symbol : json.get("symbols")) {
-                    if (!symbol.path("isFunction").asBoolean(false)) {
-                        continue;
-                    }
-                    String name = symbol.path("name").asText();
-                    if (baseName.equals(name) ||
-                        ("_" + baseName).equals(name)) {
-                        return new FunctionRef(
-                            name, symbol.get("address").asText());
-                    }
-                }
+        Address mainEnd = mainStart.add(mainBytes.length - 1L);
+        Address transformEnd =
+            transformStart.add(transformBytes.length - 1L);
 
-                fail("Could not find function " + baseName +
-                    " or _" + baseName);
-                return null;
-            });
+        int tx = program.startTransaction(
+            "create semantic provenance fixture");
+        try {
+            program.getMemory().setBytes(mainStart, mainBytes);
+            program.getMemory().setBytes(
+                transformStart, transformBytes);
+
+            DisassembleCommand mainDisassemble =
+                new DisassembleCommand(mainStart, null, true);
+            DisassembleCommand transformDisassemble =
+                new DisassembleCommand(transformStart, null, true);
+
+            assertTrue("synthetic main should disassemble",
+                mainDisassemble.applyTo(
+                    program, TaskMonitor.DUMMY));
+            assertTrue("synthetic transform should disassemble",
+                transformDisassemble.applyTo(
+                    program, TaskMonitor.DUMMY));
+
+            FunctionManager manager =
+                program.getFunctionManager();
+
+            Function transform = manager.createFunction(
+                "transform",
+                transformStart,
+                new AddressSet(transformStart, transformEnd),
+                SourceType.USER_DEFINED);
+            assertNotNull(
+                "synthetic transform should be created", transform);
+
+            Function main = manager.createFunction(
+                "main",
+                mainStart,
+                new AddressSet(mainStart, mainEnd),
+                SourceType.USER_DEFINED);
+            assertNotNull(
+                "synthetic main should be created", main);
+
+            PrototypeModel defaultConvention =
+                program.getCompilerSpec()
+                    .getDefaultCallingConvention();
+            assertNotNull(
+                "compiler spec should define a default calling convention",
+                defaultConvention);
+            transform.setCallingConvention(
+                defaultConvention.getName());
+            main.setCallingConvention(
+                defaultConvention.getName());
+
+            transform.setReturnType(
+                DWordDataType.dataType,
+                SourceType.USER_DEFINED);
+            transform.addParameter(
+                new ParameterImpl(
+                    "seed",
+                    DWordDataType.dataType,
+                    program,
+                    SourceType.USER_DEFINED),
+                SourceType.USER_DEFINED);
+
+            main.setReturnType(
+                DWordDataType.dataType,
+                SourceType.USER_DEFINED);
+        }
+        finally {
+            program.endTransaction(tx, true);
+        }
+
+        env.open(program);
+        ProgramManager programManager =
+            tool.getService(ProgramManager.class);
+        assertNotNull(
+            "ProgramManager service", programManager);
+        programManager.openProgram(program);
+        serverManager.programOpened(program, tool);
+
+        return program.getDomainFile().getPathname();
     }
 
-    private JsonNode findCallToken(
-            String path, String functionName) throws Exception {
+    private JsonNode findCallToken(String path) throws Exception {
         return withMcpClient(
             createMcpTransport(),
             (McpClientFunction<JsonNode>) client -> {
@@ -84,7 +178,7 @@ public class SemanticProvenanceToolProviderIntegrationTest
                         "get-decompiler-provenance",
                         Map.of(
                             "programPath", path,
-                            "function", functionName,
+                            "function", "main",
                             "tokenText", "transform",
                             "maxTokens", 32)));
                 assertMcpResultNotError(
@@ -115,11 +209,8 @@ public class SemanticProvenanceToolProviderIntegrationTest
     @Test
     public void testDecompilerProvenanceLinksCallTokenToHighPcode()
             throws Exception {
-        String path =
-            AnalyzedFixtureSupport.importAndAnalyze(this, FIXTURE);
-        FunctionRef main = resolveFunction(path, "main");
-
-        JsonNode token = findCallToken(path, main.name());
+        String path = createSemanticFixture();
+        JsonNode token = findCallToken(path);
 
         assertTrue(token.get("directAddressLinked").asBoolean());
         assertTrue(token.get("minAddress").asText().startsWith("0x"));
@@ -136,10 +227,8 @@ public class SemanticProvenanceToolProviderIntegrationTest
     @Test
     public void testDisplayLineSelectorKeepsDecompilerContext()
             throws Exception {
-        String path =
-            AnalyzedFixtureSupport.importAndAnalyze(this, FIXTURE);
-        FunctionRef main = resolveFunction(path, "main");
-        JsonNode callToken = findCallToken(path, main.name());
+        String path = createSemanticFixture();
+        JsonNode callToken = findCallToken(path);
         int displayLine =
             callToken.get("displayLineNumber").asInt();
 
@@ -150,7 +239,7 @@ public class SemanticProvenanceToolProviderIntegrationTest
                     "get-decompiler-provenance",
                     Map.of(
                         "programPath", path,
-                        "function", main.name(),
+                        "function", "main",
                         "displayLine", displayLine,
                         "maxTokens", 64)));
             assertMcpResultNotError(
@@ -182,10 +271,8 @@ public class SemanticProvenanceToolProviderIntegrationTest
     @Test
     public void testCallsiteSemanticsReportsTargetAndConcreteArgument()
             throws Exception {
-        String path =
-            AnalyzedFixtureSupport.importAndAnalyze(this, FIXTURE);
-        FunctionRef main = resolveFunction(path, "main");
-        JsonNode callToken = findCallToken(path, main.name());
+        String path = createSemanticFixture();
+        JsonNode callToken = findCallToken(path);
         String callsite = callToken.get("minAddress").asText();
 
         withMcpClient(createMcpTransport(), client -> {
@@ -203,16 +290,16 @@ public class SemanticProvenanceToolProviderIntegrationTest
             JsonNode json = parseJsonContent(
                 ((TextContent) result.content().get(0)).text());
             assertEquals(callsite, json.get("callsite").asText());
-            assertEquals(main.name(), json.get("caller").asText());
+            assertEquals("main", json.get("caller").asText());
             assertTrue(json.get("callOperationCount").asInt() > 0);
 
             JsonNode call = json.get("calls").get(0);
             assertEquals("CALL", call.get("opcode").asText());
             assertTrue(call.get("direct").asBoolean());
             assertTrue(call.get("target").get("resolved").asBoolean());
-            assertTrue(
-                call.get("target").get("name").asText()
-                    .contains("transform"));
+            assertEquals(
+                "transform",
+                call.get("target").get("name").asText());
             assertTrue(
                 call.get("statementText").asText()
                     .contains("transform"));
@@ -222,14 +309,28 @@ public class SemanticProvenanceToolProviderIntegrationTest
             boolean sawEleven = false;
             for (JsonNode argument : call.get("arguments")) {
                 JsonNode varnode = argument.get("varnode");
-                if (varnode.path("constant").asBoolean(false) &&
-                    "0xb".equals(varnode.path("value").asText())) {
+                if (isConstantEleven(varnode)) {
                     sawEleven = true;
                     break;
                 }
+
+                JsonNode producer = argument.get("producer");
+                if (producer != null && producer.has("inputs")) {
+                    for (JsonNode input : producer.get("inputs")) {
+                        if (isConstantEleven(input)) {
+                            sawEleven = true;
+                            break;
+                        }
+                    }
+                }
+                if (sawEleven) {
+                    break;
+                }
             }
+
             assertTrue(
-                "transform(11) should expose a High P-code constant argument 0xb",
+                "transform(11) should expose constant 0xb either as the " +
+                "call argument Varnode or its immediate producer input",
                 sawEleven);
 
             assertTrue(
@@ -241,9 +342,7 @@ public class SemanticProvenanceToolProviderIntegrationTest
     @Test
     public void testDecompilerProvenanceRequiresSelector()
             throws Exception {
-        String path =
-            AnalyzedFixtureSupport.importAndAnalyze(this, FIXTURE);
-        FunctionRef main = resolveFunction(path, "main");
+        String path = createSemanticFixture();
 
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
@@ -252,7 +351,7 @@ public class SemanticProvenanceToolProviderIntegrationTest
                     "get-decompiler-provenance",
                     Map.of(
                         "programPath", path,
-                        "function", main.name())));
+                        "function", "main")));
             assertTrue(
                 "selector-less provenance request should be rejected",
                 result.isError());
@@ -260,5 +359,11 @@ public class SemanticProvenanceToolProviderIntegrationTest
                 result.toString().contains(
                     "At least one selector is required"));
         });
+    }
+
+    private static boolean isConstantEleven(JsonNode varnode) {
+        return varnode != null &&
+            varnode.path("constant").asBoolean(false) &&
+            "0xb".equals(varnode.path("value").asText());
     }
 }
