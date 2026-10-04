@@ -307,11 +307,12 @@ public class StackExecutionStateToolProvider extends AbstractToolProvider {
         info.put("stackPointerDepthBefore",
             serializeDepth(spDepthBefore));
 
-        boolean agreement =
+        boolean comparable =
             isKnownDepth(depthBefore) &&
-            isKnownDepth(spDepthBefore) &&
-            depthBefore == spDepthBefore;
-        info.put("depthSourcesAgree", agreement);
+            isKnownDepth(spDepthBefore);
+        info.put("depthSourcesComparable", comparable);
+        info.put("depthSourcesAgree",
+            comparable ? depthBefore == spDepthBefore : null);
 
         List<Map<String, Object>> registerDepths =
             new ArrayList<>(requestedRegisters.size());
