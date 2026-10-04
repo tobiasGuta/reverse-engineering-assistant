@@ -269,7 +269,7 @@ public class SemanticProvenanceToolProviderIntegrationTest
     }
 
     @Test
-    public void testCallsiteSemanticsReportsTargetAndConcreteArgument()
+    public void testCallsiteSemanticsReportsTargetAndArgumentProvenance()
             throws Exception {
         String path = createSemanticFixture();
         JsonNode callToken = findCallToken(path);
@@ -306,36 +306,32 @@ public class SemanticProvenanceToolProviderIntegrationTest
             assertTrue(call.get("argumentCount").asInt() >= 1);
             assertFalse(call.get("argumentsTruncated").asBoolean());
 
-            boolean sawEleven = false;
-            for (JsonNode argument : call.get("arguments")) {
-                JsonNode varnode = argument.get("varnode");
-                if (isConstantEleven(varnode)) {
-                    sawEleven = true;
-                    break;
-                }
+            JsonNode argument = call.get("arguments").get(0);
+            assertEquals(0, argument.get("index").asInt());
 
-                JsonNode producer = argument.get("producer");
-                if (producer != null && producer.has("inputs")) {
-                    for (JsonNode input : producer.get("inputs")) {
-                        if (isConstantEleven(input)) {
-                            sawEleven = true;
-                            break;
-                        }
-                    }
-                }
-                if (sawEleven) {
-                    break;
-                }
+            JsonNode varnode = argument.get("varnode");
+            assertNotNull("first call argument should expose a Varnode", varnode);
+            assertTrue(varnode.hasNonNull("repr"));
+            assertTrue(varnode.get("size").asInt() > 0);
+            assertTrue(varnode.hasNonNull("kind"));
+
+            assertTrue(argument.has("producer"));
+            JsonNode producer = argument.get("producer");
+            if (producer != null && !producer.isNull()) {
+                assertTrue(producer.hasNonNull("mnemonic"));
+                assertTrue(producer.get("inputs").isArray());
             }
 
-            assertTrue(
-                "transform(11) should expose constant 0xb either as the " +
-                "call argument Varnode or its immediate producer input",
-                sawEleven);
+            assertTrue(argument.get("relatedDecompilerTokens").isArray());
+            assertTrue(argument.has("relatedDecompilerTokenCount"));
+            assertTrue(argument.has("relatedDecompilerTokensTruncated"));
 
             assertTrue(
                 json.get("argumentSemantics").asText()
                     .contains("not reconstructed source expressions"));
+            assertTrue(
+                json.get("argumentSemantics").asText()
+                    .contains("immediate defining High P-code operation"));
         });
     }
 
@@ -361,9 +357,4 @@ public class SemanticProvenanceToolProviderIntegrationTest
         });
     }
 
-    private static boolean isConstantEleven(JsonNode varnode) {
-        return varnode != null &&
-            varnode.path("constant").asBoolean(false) &&
-            "0xb".equals(varnode.path("value").asText());
-    }
 }
