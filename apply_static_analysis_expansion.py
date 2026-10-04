@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the ReVa generic static-analysis expansion (Slices 1-2) to a checked-out ReVa repository.
+"""Apply the ReVa generic static-analysis expansion (Slices 1-3) to a checked-out ReVa repository.
 
 Targets the current upstream layout inspected on 2026-10-03. The script is
 idempotent for the provider-registration edits and refuses to overwrite an
@@ -79,6 +79,7 @@ def main() -> int:
         "import reva.tools.pcode.PcodeToolProvider;\n"
         "import reva.tools.sourcemetadata.SourceMetadataToolProvider;\n"
         "import reva.tools.stackabi.StackAbiToolProvider;\n"
+        "import reva.tools.provenance.SemanticProvenanceToolProvider;\n"
     )
     text = replace_once(text, old_import, new_import, "provider import")
 
@@ -87,7 +88,7 @@ def main() -> int:
     text = replace_once(text, old_core, new_core, "CORE_ANALYSIS provider list")
 
     old_advanced = """                return List.of(\n                    new CallGraphToolProvider(server),\n                    new DataFlowToolProvider(server),\n                    new VtableToolProvider(server));"""
-    new_advanced = """                return List.of(\n                    new CallGraphToolProvider(server),\n                    new DataFlowToolProvider(server),\n                    new VtableToolProvider(server),\n                    new ControlFlowToolProvider(server),\n                    new PcodeToolProvider(server),\n                    new SourceMetadataToolProvider(server),\n                    new StackAbiToolProvider(server));"""
+    new_advanced = """                return List.of(\n                    new CallGraphToolProvider(server),\n                    new DataFlowToolProvider(server),\n                    new VtableToolProvider(server),\n                    new ControlFlowToolProvider(server),\n                    new PcodeToolProvider(server),\n                    new SourceMetadataToolProvider(server),\n                    new StackAbiToolProvider(server),\n                    new SemanticProvenanceToolProvider(server));"""
     text = replace_once(text, old_advanced, new_advanced, "ADVANCED_ANALYSIS provider list")
 
     manager.write_text(text)
@@ -104,6 +105,8 @@ def main() -> int:
             '    "get-source-mappings",\n'
             '    "get-function-stack-frame",\n'
             '    "get-function-abi",\n'
+            '    "get-decompiler-provenance",\n'
+            '    "get-callsite-semantics",\n'
         )
         text = replace_once(text, old, new, "transport EXPECTED_TOOLS")
         transport_test.write_text(text)
