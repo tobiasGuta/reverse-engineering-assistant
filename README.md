@@ -8,11 +8,11 @@ Reviewed against upstream ReVa `main` at commit `01a154a8edf233b02a0e7707e2ff593
 
 ## Verification status
 
-Slices 1–2 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. Slice 2 also passed a final read-only live regression on a real x86-64 ELF after the live test had exposed and driven corrections for unresolved ABI normalization, unknown stack-purge sentinels, and single-instruction P-code truncation semantics.
+Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 25, Gradle 9.6.1, and an isolated CPython 3.13 PyGhidra/MCP transport environment. Slice 2 also passed a final read-only live regression on a real x86-64 ELF after the live test had exposed and driven corrections for unresolved ABI normalization, unknown stack-purge sentinels, and single-instruction P-code truncation semantics.
 
 **Slice 2 is frozen as of 2026-10-03.** No further Slice 2 contract changes should be made absent new evidence of a generic correctness or safety defect. See `STACK_ABI_VALIDATION.md` for the frozen invariants and validation record.
 
-Slice 3 is implemented on `feat/semantic-provenance` and is **not frozen yet**. It adds a read-only semantic-provenance bridge from decompiler tokens to High P-code/SSA plus a bounded call-site view. Its next gates are automated verification and a live read-only regression on a real binary.
+**Slice 3 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF after an earlier live run exposed line-context and display-line-numbering defects. No further Slice 3 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `SEMANTIC_PROVENANCE_VALIDATION.md` for the frozen invariants and validation record.
 
 ## New MCP tools
 
@@ -156,6 +156,14 @@ The first Slice 2 live stack/ABI regression then exposed three generic contract 
 - complete single-instruction `get-pcode` responses no longer report `truncated: true`; truncation is reported only when requested bounds actually omit data
 
 After those corrections, the complete automated verification path passed and a second real-binary read-only regression confirmed the StackFrame coordinate contract, ABI normalization, P-code truncation semantics, and machine/Ghidra coordinate reconciliation.
+
+The first Slice 3 live semantic-provenance regression then exposed three generic contract defects before freeze:
+
+- call-site `statementLines` could be empty even when a decompiler statement was available because token/line context had not been materialized consistently
+- related decompiler tokens could lose `clangLineNumber`, `displayLineNumber`, `lineText`, and `lineTokenIndex`
+- `displayLineNumber` used an invalid fixed/heuristic offset from Ghidra `ClangLine` numbering rather than matching the actual `DecompiledFunction.getC()` rendering used by ReVa `get-decompilation`
+
+Those defects were corrected by building token-line context from the materialized `ClangLine` view and mapping each `ClangLine` to the actual rendered decompilation line rather than assuming a permanent offset. The complete automated verification path passed again, and the final live regression confirmed exact display-line agreement, populated statement-line context, preserved related-token context, direct target resolution, and bounded argument provenance.
 
 ## Deliberately deferred
 
