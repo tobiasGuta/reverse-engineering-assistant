@@ -1,4 +1,4 @@
-# ReVa Static Analysis Expansion — Slices 1–3
+# ReVa Static Analysis Expansion — Slices 1–4
 
 This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
@@ -13,6 +13,8 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 **Slice 2 is frozen as of 2026-10-03.** No further Slice 2 contract changes should be made absent new evidence of a generic correctness or safety defect. See `STACK_ABI_VALIDATION.md` for the frozen invariants and validation record.
 
 **Slice 3 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF after an earlier live run exposed line-context and display-line-numbering defects. No further Slice 3 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `SEMANTIC_PROVENANCE_VALIDATION.md` for the frozen invariants and validation record.
+
+Slice 4 is implemented on `feat/stack-execution-state` and is **not frozen yet**. It adds a bounded read-only per-instruction view of Ghidra `CallDepthChangeInfo` stack/register state, fall-through depth deltas, and resolvable machine stack operands. Its next gates are automated verification and a live read-only regression on a real binary.
 
 ## New MCP tools
 
@@ -50,6 +52,10 @@ Bounded token-level provenance from Ghidra's decompiler markup. Select by machin
 
 Read-only inspection of one machine call site through High P-code. Returns the CALL/CALLIND operation, resolved direct target when available, decompiler statement context, argument Varnodes, immediate producer operations, and exact/shared-variable token links. It deliberately does **not** infer ABI register placement from the High P-code argument list.
 
+### `get-function-stack-state`
+
+Bounded per-instruction access to Ghidra `CallDepthChangeInfo` symbolic stack state. Reports stack depth before each instruction, entry-stack-pointer-relative SP and requested-register values, normal fall-through depth deltas, and machine operand stack offsets when Ghidra can resolve them. Results are static analysis facts in ascending address order, not a native execution trace, absolute stack address, or stack-alignment guarantee.
+
 ## Safety / architecture
 
 All added tools are read-only. This slice does not add:
@@ -68,7 +74,7 @@ Output is explicitly bounded to avoid flooding MCP context.
 Provider placement when applied to upstream ReVa:
 
 - `get-program-overview` → `CORE_ANALYSIS`
-- CFG, P-code, source metadata, stack frame, ABI, semantic provenance → `ADVANCED_ANALYSIS`
+- CFG, P-code, source metadata, stack frame, ABI, semantic provenance, stack execution state → `ADVANCED_ANALYSIS`
 
 ## Apply to a clean upstream checkout
 
@@ -106,8 +112,8 @@ The verification script never modifies the normal workstation Ghidra installatio
 
 The branch contains:
 
-- six new ReVa provider implementations
-- six Ghidra integration test classes
+- seven new ReVa provider implementations
+- seven Ghidra integration test classes
 - a guarded application script that wires the providers into upstream ReVa
 - a focused verification script
 - a generic MCP smoke-test prompt
@@ -132,6 +138,16 @@ python3 ./apply_semantic_provenance_slice.py /mnt/Development/Tools/ReVa-Static-
 
 It copies only the new provenance provider/test, performs guarded provider-registration and MCP transport edits, and creates no commit or Ghidra installation. During an evidence-driven Slice 3 correction, re-run it with `--refresh`; that mode replaces only the Slice 3-owned provider/test files and leaves the frozen Slice 1–2 provider files untouched.
 
+## Apply Slice 4 to an existing Slices 1–3 checkout
+
+For the current development checkout with frozen Slices 1–3 already applied, use the incremental Slice 4 helper:
+
+```bash
+python3 ./apply_stack_execution_state_slice.py /mnt/Development/Tools/ReVa-Static-Analysis
+```
+
+During evidence-driven Slice 4 corrections, re-run it with `--refresh`. That mode replaces only the Slice 4-owned provider/test files and leaves the frozen Slices 1–3 provider files untouched.
+
 ## Suggested manual smoke test
 
 Prepare a persistent development-only Ghidra copy without modifying the stable installation:
@@ -140,7 +156,7 @@ Prepare a persistent development-only Ghidra copy without modifying the stable i
 ./prepare_dev_ghidra.sh
 ```
 
-Launch the command printed by the script, enable ReVa in that development copy, open a known test binary, and use `SMOKE_TEST_PROMPT.md`. For Slice 3 specifically, use `SEMANTIC_PROVENANCE_SMOKE_TEST_PROMPT.md`. For later rebuilds, use `./prepare_dev_ghidra.sh --refresh`.
+Launch the command printed by the script, enable ReVa in that development copy, open a known test binary, and use `SMOKE_TEST_PROMPT.md`. For Slice 3 use `SEMANTIC_PROVENANCE_SMOKE_TEST_PROMPT.md`; for Slice 4 use `STACK_EXECUTION_STATE_SMOKE_TEST_PROMPT.md`. For later rebuilds, use `./prepare_dev_ghidra.sh --refresh`.
 
 ## Manual smoke-test refinement
 
@@ -167,4 +183,4 @@ Those defects were corrected by building token-line context from the materialize
 
 ## Deliberately deferred
 
-Good later slices include per-instruction stack-depth analysis, a read-only debugger observer, objective function querying, richer generic debug-metadata adapters, and eventually bounded P-code emulation. Per-instruction stack depth remains the leading candidate after Slice 3 proves stable; it should extend the frozen StackFrame/ABI contract rather than redefine it.
+After Slice 4 proves stable, the next major realism gain is a read-only debugger observer. Objective function querying, richer generic debug-metadata adapters, BSim-assisted similarity, and eventually bounded P-code emulation remain later candidates. Slice 4 must extend the frozen StackFrame/ABI contracts without redefining their coordinate semantics.

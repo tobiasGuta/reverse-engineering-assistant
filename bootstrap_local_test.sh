@@ -30,9 +30,9 @@ cd "$DEST"
 
 echo "Checking out reviewed upstream commit..."
 git checkout "$UPSTREAM_COMMIT"
-git switch -c feat/semantic-provenance-local
+git switch -c feat/stack-execution-state-local
 
-echo "Applying generic static-analysis expansion (Slices 1-3)..."
+echo "Applying generic static-analysis expansion (Slices 1-4)..."
 python3 "$SCRIPT_DIR/apply_static_analysis_expansion.py" .
 
 echo
