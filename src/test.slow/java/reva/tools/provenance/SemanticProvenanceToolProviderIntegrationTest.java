@@ -322,6 +322,8 @@ public class SemanticProvenanceToolProviderIntegrationTest
         String path = createSemanticFixture();
         JsonNode callToken = findCallToken(path);
         String callsite = callToken.get("minAddress").asText();
+        int decompilationLine =
+            findDecompilationLineContaining(path, "transform");
 
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
@@ -356,7 +358,7 @@ public class SemanticProvenanceToolProviderIntegrationTest
                 call.get("statementLines").isArray() &&
                 call.get("statementLines").size() > 0);
             assertEquals(
-                findDecompilationLineContaining(path, "transform"),
+                decompilationLine,
                 call.get("statementLines").get(0).asInt());
             assertTrue(call.get("argumentCount").asInt() >= 1);
             assertFalse(call.get("argumentsTruncated").asBoolean());
