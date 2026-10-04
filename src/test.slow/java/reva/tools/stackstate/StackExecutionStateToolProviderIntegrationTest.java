@@ -181,7 +181,7 @@ public class StackExecutionStateToolProviderIntegrationTest
         JsonNode push = findByMnemonic(json, "PUSH");
         JsonNode sub = findByMnemonic(json, "SUB");
         JsonNode movMemory =
-            findInstructionContaining(json, "[EBP + -0x4]");
+            findByAddress(json, "0x01000406");
         JsonNode call = findByMnemonic(json, "CALL");
         JsonNode add = findByMnemonic(json, "ADD");
         JsonNode pop = findByMnemonic(json, "POP");
@@ -291,15 +291,15 @@ public class StackExecutionStateToolProviderIntegrationTest
         return null;
     }
 
-    private static JsonNode findInstructionContaining(
-            JsonNode json, String text) {
+    private static JsonNode findByAddress(
+            JsonNode json, String address) {
         for (JsonNode instruction : json.get("instructions")) {
-            if (instruction.get("instruction")
-                    .asText().contains(text)) {
+            if (address.equals(
+                    instruction.get("address").asText())) {
                 return instruction;
             }
         }
-        fail("Could not find instruction containing " + text);
+        fail("Could not find instruction at " + address);
         return null;
     }
 
