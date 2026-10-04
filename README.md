@@ -14,7 +14,7 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 
 **Slice 3 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF after an earlier live run exposed line-context and display-line-numbering defects. No further Slice 3 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `SEMANTIC_PROVENANCE_VALIDATION.md` for the frozen invariants and validation record.
 
-Slice 4 is implemented on `feat/stack-execution-state` and is **not frozen yet**. It adds a bounded read-only per-instruction view of Ghidra `CallDepthChangeInfo` stack/register state, fall-through depth deltas, and resolvable machine stack operands. Its next gates are automated verification and a live read-only regression on a real binary.
+**Slice 4 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF. The automated gate also caught and corrected an invalid test assumption around unresolved callee purge: known zero-purge callees preserve a known post-call state, while unresolved purge/calling-convention facts may legitimately yield unknown state. No further Slice 4 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `STACK_EXECUTION_STATE_VALIDATION.md` for the frozen invariants and validation record.
 
 ## New MCP tools
 
@@ -180,6 +180,10 @@ The first Slice 3 live semantic-provenance regression then exposed three generic
 - `displayLineNumber` used an invalid fixed/heuristic offset from Ghidra `ClangLine` numbering rather than matching the actual `DecompiledFunction.getC()` rendering used by ReVa `get-decompilation`
 
 Those defects were corrected by building token-line context from the materialized `ClangLine` view and mapping each `ClangLine` to the actual rendered decompilation line rather than assuming a permanent offset. The complete automated verification path passed again, and the final live regression confirmed exact display-line agreement, populated statement-line context, preserved related-token context, direct target resolution, and bounded argument provenance.
+
+The first Slice 4 automated regression then exposed a test-fixture error: a call-site test required a known zero fall-through delta even though the synthetic callee had no known purge size. The fixture was corrected to make zero purge explicit when testing known post-call state, and a second regression was added to require unknown/null post-call state when the callee purge remains unresolved.
+
+After those corrections, the complete automated verification path passed. A final real-binary read-only regression on `/grimoire` confirmed entry-relative RSP/RBP state, prologue stack transitions, call-site net post-return state, canonicalized pagination, sentinel normalization, and honest handling of unresolved RBP-relative operand offsets. The live test also reconciled the machine operand `[RBP-0x50]` with Ghidra `Stack[-0x58]` using only returned evidence: `RBP = entrySP-8` and displacement `-0x50` imply `entrySP-0x58`. The tool itself correctly did not fabricate a `getStackOffset()` result for that RBP-relative operand.
 
 ## Deliberately deferred
 
