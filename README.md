@@ -130,7 +130,7 @@ For an existing development checkout with frozen Slices 1–2 already applied, u
 python3 ./apply_semantic_provenance_slice.py /mnt/Development/Tools/ReVa-Static-Analysis
 ```
 
-It copies only the new provenance provider/test, performs guarded provider-registration and MCP transport edits, and creates no commit or Ghidra installation.
+It copies only the new provenance provider/test, performs guarded provider-registration and MCP transport edits, and creates no commit or Ghidra installation. During an evidence-driven Slice 3 correction, re-run it with `--refresh`; that mode replaces only the Slice 3-owned provider/test files and leaves the frozen Slice 1–2 provider files untouched.
 
 ## Suggested manual smoke test
 

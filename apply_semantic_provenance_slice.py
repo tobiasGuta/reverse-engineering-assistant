@@ -25,14 +25,21 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-def copy_new_file(source: Path, destination: Path) -> None:
+def copy_slice_file(
+    source: Path, destination: Path, refresh: bool
+) -> None:
     if destination.exists():
         if destination.read_bytes() == source.read_bytes():
             print(f"keep  {destination}")
             return
-        raise RuntimeError(
-            f"Refusing to overwrite differing existing file: {destination}"
-        )
+        if not refresh:
+            raise RuntimeError(
+                f"Refusing to overwrite differing existing file: {destination}. "
+                "Use --refresh to replace only Slice 3-owned files from this bundle."
+            )
+        shutil.copy2(source, destination)
+        print(f"refresh {destination}")
+        return
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
     print(f"write {destination}")
@@ -45,6 +52,11 @@ def main() -> int:
         nargs="?",
         default="/mnt/Development/Tools/ReVa-Static-Analysis",
         help="Existing ReVa checkout with Slices 1-2 already applied",
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Replace only differing Slice 3-owned provider/test files from this bundle",
     )
     args = parser.parse_args()
 
@@ -90,17 +102,19 @@ def main() -> int:
         print("error: Slice 3 bundle files are missing", file=sys.stderr)
         return 2
 
-    copy_new_file(
+    copy_slice_file(
         source_provider,
         repo
         / "src/main/java/reva/tools/provenance/"
         "SemanticProvenanceToolProvider.java",
+        args.refresh,
     )
-    copy_new_file(
+    copy_slice_file(
         source_test,
         repo
         / "src/test.slow/java/reva/tools/provenance/"
         "SemanticProvenanceToolProviderIntegrationTest.java",
+        args.refresh,
     )
 
     manager_text = replace_once(
