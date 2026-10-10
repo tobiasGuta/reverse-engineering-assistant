@@ -40,6 +40,7 @@ git diff --check
   --tests '*StackAbiToolProviderIntegrationTest' \
   --tests '*SemanticProvenanceToolProviderIntegrationTest' \
   --tests '*StackExecutionStateToolProviderIntegrationTest' \
+  --tests '*CallBoundaryToolProviderIntegrationTest' \
   --info
 
 # Build the exact extension under test. Python/PyGhidra discovers ReVa as a
@@ -99,4 +100,4 @@ UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_mcp_tools.py -q
 
 echo
-printf '%s\n' 'Static-analysis expansion (Slices 1-4) verification completed.'
+printf '%s\n' 'Static-analysis expansion (Slices 1-4, 5A) verification completed.'
