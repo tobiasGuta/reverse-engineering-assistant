@@ -30,10 +30,13 @@ cd "$DEST"
 
 echo "Checking out reviewed upstream commit..."
 git checkout "$UPSTREAM_COMMIT"
-git switch -c feat/stack-execution-state-local
+git switch -c feat/call-boundary-evidence-local
 
-echo "Applying generic static-analysis expansion (Slices 1-4)..."
+echo "Applying generic static-analysis expansion (Slices 1-4) before Slice 5A..."
 python3 "$SCRIPT_DIR/apply_static_analysis_expansion.py" .
+
+echo "Applying read-only Slice 5A call-boundary evidence..."
+python3 "$SCRIPT_DIR/apply_call_boundary_slice.py" .
 
 echo
 echo "Running diff safety checks..."
