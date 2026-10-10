@@ -45,6 +45,7 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
     private static final int HARD_MAX_ARGUMENTS = 128;
     private static final int MAX_CALL_OPS = 8;
     private static final int MAX_RETURN_SITES = 16;
+    private static final int MAX_RETURN_SCAN_OPS = 50_000;
 
     public CallBoundaryToolProvider(McpSyncServer server) {
         super(server);
@@ -192,7 +193,7 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
             return result;
         }
 
-        if (target == null || !target.isAddress()) {
+        if (target == null || target.getAddress() == null) {
             result.put("targetKind", "direct_unresolved");
             result.put("targetVarnode", varnode(target));
             result.put("mappingStatus", "unavailable_target");
@@ -236,7 +237,7 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
         result.put("callingConventionUnknown",
             callee.hasUnknownCallingConventionName());
 
-        boolean hasSpecialStorage = false;
+        boolean hasSpecialStorage = formals.length > maxArguments;
         List<Map<String, Object>> formalInfo = new ArrayList<>();
         for (int i = 0; i < Math.min(formals.length, maxArguments); i++) {
             Parameter formal = formals[i];
@@ -250,11 +251,6 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
             hasSpecialStorage |= formal.isAutoParameter() ||
                 formal.isForcedIndirect();
             formalInfo.add(info);
-        }
-        // Account for hidden/special parameters beyond the displayed page.
-        for (int i = formalInfo.size(); i < formals.length; i++) {
-            hasSpecialStorage |= formals[i].isAutoParameter() ||
-                formals[i].isForcedIndirect();
         }
         result.put("formalParameters", formalInfo);
         result.put("formalsTruncated", formals.length > formalInfo.size());
@@ -277,9 +273,16 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
         }
 
         int returnCount = 0;
+        int scannedOps = 0;
+        boolean returnScanTruncated = false;
         List<Map<String, Object>> returnEvidence = new ArrayList<>();
         var ops = calleeHigh.getPcodeOps();
         while (ops.hasNext()) {
+            if (scannedOps >= MAX_RETURN_SCAN_OPS) {
+                returnScanTruncated = true;
+                break;
+            }
+            scannedOps++;
             PcodeOpAST op = ops.next();
             if (op.getOpcode() != PcodeOp.RETURN) {
                 continue;
@@ -295,8 +298,11 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
             }
         }
         result.put("calleeReturnSiteCount", returnCount);
+        result.put("returnScanTruncated", returnScanTruncated);
+        result.put("returnSiteCountExact", !returnScanTruncated);
         result.put("calleeReturnSites", returnEvidence);
-        result.put("returnSitesTruncated", returnCount > returnEvidence.size());
+        result.put("returnSitesTruncated",
+            returnScanTruncated || returnCount > returnEvidence.size());
         result.put("returnRelationship",
             call.getOutput() == null ? "no_caller_output_model" :
             returnCount == 0 ? "callee_return_unavailable" :
