@@ -1,6 +1,6 @@
-# ReVa Static Analysis Expansion — Slices 1–4
+# ReVa Static Analysis Expansion — Slices 1–4 + 5A (development)
 
-This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
+This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. Slice 5A is development-only and is NOT frozen or live-verified. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
 > Repository note: this GitHub repository was created independently rather than as a GitHub fork, so the branch stores the expansion source and guarded application tooling against a pinned upstream revision.
 
@@ -15,6 +15,14 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 **Slice 3 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF after an earlier live run exposed line-context and display-line-numbering defects. No further Slice 3 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `SEMANTIC_PROVENANCE_VALIDATION.md` for the frozen invariants and validation record.
 
 **Slice 4 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF. The automated gate also caught and corrected an invalid test assumption around unresolved callee purge: known zero-purge callees preserve a known post-call state, while unresolved purge/calling-convention facts may legitimately yield unknown state. No further Slice 4 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `STACK_EXECUTION_STATE_VALIDATION.md` for the frozen invariants and validation record.
+
+## Slice 5A — development status (not yet live-verified)
+
+The branch adds `inspect-call-boundary`, a bounded, read-only tool that describes a machine call and separate caller/callee High P-code evidence, including direct target resolution, arguments, formal prototype context, and modeled return sites. It labels any positional argument mapping a **decompiler candidate**, not a proven runtime relationship. Indirect, external, and thunk calls do not receive invented mappings. No cross-function propagation is claimed; that remains a possible later 5B stage.
+
+`apply_call_boundary_slice.py` applies only the new provider/test to an existing frozen Slices 1–4 checkout and guards registration edits. The normal `bootstrap_local_test.sh` also applies it after Slices 1–4. `verify_static_analysis_expansion.sh` now runs the 5A integration class in the same isolated testing workflow. **We cannot claim this slice passes until the actual Ghidra 12.1.x Gradle and PyGhidra tests and a real-binary read-only regression run on Fedora.**
+
+The existing upstream dataflow provider has a potentially silent 500-operation truncation path. It is not changed by 5A; that limitation must be fixed and separately verified before implementing any dependent 5B value-flow traversal.
 
 ## New MCP tools
 
