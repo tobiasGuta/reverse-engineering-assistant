@@ -1,4 +1,4 @@
-# ReVa Static Analysis Expansion — Frozen Slices 1–5A + Dataflow Reliability Development
+# ReVa Static Analysis Expansion — Frozen Slices 1–5A + Dataflow Reliability Foundation
 
 This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. **Slice 5A's bounded call-boundary contract was frozen on 2026-10-11**, after Ghidra integration tests and real Linux ELF `-O0`/`-O2` regressions passed on Fedora. It remains a development-branch patch, not an installed or merged production release. The expansion deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
@@ -16,38 +16,39 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 
 **Slice 4 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF. The automated gate also caught and corrected an invalid test assumption around unresolved callee purge: known zero-purge callees preserve a known post-call state, while unresolved purge/calling-convention facts may legitimately yield unknown state. No further Slice 4 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `STACK_EXECUTION_STATE_VALIDATION.md` for the frozen invariants and validation record.
 
-## Slice 5B prerequisite — upstream intraprocedural dataflow reliability (UNVERIFIED)
+## Dataflow reliability prerequisite — frozen 2026-10-11
 
-**Development only; not a frozen or implemented cross-function-tracing feature.**
-The pinned upstream `DataFlowToolProvider` uses Ghidra's
-`DecompilerUtils.getForwardSliceToPCodeOps` and backward equivalent to
-materialize a full, potentially large graph slice. It then collects up to
-500 operations from an unordered set and returns no truncation signal.
-That behavior can hide incomplete evidence.
+The pinned upstream `DataFlowToolProvider` previously materialized entire
+SSA slices before taking 500 operations from an unordered set, without
+reporting incomplete results. The new SHA-pinned
+`apply_dataflow_reliability.py` patch and dataflow-owned
+`BoundedDataFlowSlice` replace that behavior with deterministic,
+resource-bounded intraprocedural worklist traversal.
 
-This branch adds a separately-owned `BoundedDataFlowSlice` implementation,
-and `apply_dataflow_reliability.py` applies a **SHA-pinned**, narrowly scoped
-patch to the existing upstream dataflow provider in a Slices 1–5A checkout.
-The new worklist walks High P-code varnode def/use chains and terminates
-at the `CALL`/`CALLIND` boundary, matching Ghidra's intended
-intraprocedural semantics. It sorts seeds, descendants and output P-code
-operations by stable graph identities before applying finite operation, varnode, fanout, and total-edge work budgets.
+The original `trace-data-flow-forward` and `trace-data-flow-backward`
+tools now report `complete`, `truncated`, `truncationReason`,
+`operationLimit`, `visitedVarnodeCount`, `scannedEdgeCount`, and
+`terminatorsComplete`. A truncated trace cannot prove the absence
+of unobserved operations or terminators. The traversal stops at
+`CALL`/`CALLIND` and performs neither interprocedural propagation
+nor execution.
 
-Existing `trace-data-flow-forward`/`trace-data-flow-backward` now expose
-`complete`, `truncated`, `truncationReason`, `operationLimit`,
-`visitedVarnodeCount`, `scannedEdgeCount`, and `terminatorsComplete`. A partial trace
-is **not evidence of absence** for values or terminators.
+**Verification:** the full isolated Fedora/Ghidra workflow passed, including
+the existing MCP transport tests (**3/3**), frozen Slice 5A native ELF
+regressions (**2/2**), and bounded dataflow native ELF `-O0`/`-O2`
+regressions (**2/2**). The final targeted Ghidra integration suite also
+passed after adding negative controls for SSA cycles, oversized
+fanout, and the global 100,000-edge budget:
+`BUILD SUCCESSFUL in 23s`.
 
-Regression coverage includes exact 500/501 operation boundaries,
-repeatability under reversed descendant iteration and seed order,
-call-boundary termination, a SHA-pinned guarded applicator, and O0/O2
-native ELF MCP acceptance. The initial code and tests are committed
-but **have not yet been executed on Fedora**. No extension installation
-or stable MCP server changes are made by the applicator.
+The bounded dataflow foundation is **frozen as of 2026-10-11** for this
+explicit-completeness contract. It remains part of a **development-branch
+patch**, not a merged or installed production extension. There were no
+changes to frozen Slice 1–5A provider source files.
 
 See [DATAFLOW_RELIABILITY_VALIDATION.md](DATAFLOW_RELIABILITY_VALIDATION.md).
-This is a prerequisite for evaluating any later bounded one-hop Slice 5B
-stitching; no interprocedural value propagation is implemented here.
+A later bounded one-hop Slice 5B requires a **separate** scope, code review,
+and live regression. No cross-function flow stitching has been built.
 
 ## Slice 5A — frozen 2026-10-11
 
