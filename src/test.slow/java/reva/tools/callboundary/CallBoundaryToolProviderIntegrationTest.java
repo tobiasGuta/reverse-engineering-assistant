@@ -213,4 +213,28 @@ public class CallBoundaryToolProviderIntegrationTest
             }
         });
     }
+    @Test
+    public void testIncompleteReturnScanNeverImpliesReturnIsAbsent() {
+        assertEquals(
+            "incomplete_callee_return_scan",
+            CallBoundaryToolProvider.classifyReturnRelationship(
+                true, true, 0));
+        assertEquals(
+            "incomplete_callee_return_scan",
+            CallBoundaryToolProvider.classifyReturnRelationship(
+                false, true, 1));
+        assertEquals(
+            "callee_return_unavailable",
+            CallBoundaryToolProvider.classifyReturnRelationship(
+                true, false, 0));
+        assertEquals(
+            "no_caller_output_model",
+            CallBoundaryToolProvider.classifyReturnRelationship(
+                false, false, 1));
+        assertEquals(
+            "separate_caller_and_callee_models_not_runtime_equivalence",
+            CallBoundaryToolProvider.classifyReturnRelationship(
+                true, false, 2));
+    }
+
 }
