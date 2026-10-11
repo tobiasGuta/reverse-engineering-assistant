@@ -35,6 +35,7 @@ final class BoundedDataFlowSlice {
     static final int MAX_VISITED_VARNODES = 10000;
     static final int MAX_PENDING_VARNODES = 10000;
     static final int MAX_DESCENDANTS_PER_VARNODE = 10000;
+    static final int MAX_INPUTS_PER_OPERATION = 10000;
 
     enum Direction { BACKWARD, FORWARD }
 
@@ -108,6 +109,10 @@ final class BoundedDataFlowSlice {
                 included.add(op);
                 if (isCall(op)) {
                     continue;
+                }
+                if (op.getNumInputs() > MAX_INPUTS_PER_OPERATION) {
+                    reason = "input_fanout_budget";
+                    break;
                 }
                 List<Varnode> inputs = new ArrayList<>();
                 for (int i = 0; i < op.getNumInputs(); i++) {
