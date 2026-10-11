@@ -30,7 +30,7 @@ and CALLIND operations as traversal boundaries.
   is also ordered. Identity-based visited sets prevent cycles.
 - Caps unique returned operations at **500**, visited varnodes at
   **10,000**, queued varnodes at **10,000**, per-varnode descendants
-  at **10,000**, and P-code inputs per operation at **10,000**.
+  at **10,000**, P-code inputs per operation at **10,000**, and total traversed\n  def/use edges at **100,000**.
 - Crossing any limit marks the result **truncated** with a reason.
   Exactly 500 operations is not automatically marked truncated; only
   genuinely unprocessed graph work produces a partial status.
