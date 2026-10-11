@@ -1,6 +1,6 @@
 # ReVa — Dataflow Reliability Foundation (before Slice 5B)
 
-**Status: DEVELOPMENT; Fedora/Ghidra acceptance not yet run.**
+**Status: DEVELOPMENT; first full Fedora/Ghidra verification passed, with additional adversarial graph tests pending.**
 **Parent branch:** `feat/call-boundary-evidence` (frozen Slice 5A).
 **Upstream pin:** `cyberkaida/reverse-engineering-assistant` commit
 `01a154a8edf233b02a0e7707e2ff5933893c6d53`; original
@@ -61,18 +61,55 @@ Added tests:
   transport; verify completion metadata and repeated output ordering.
   Fixtures are never executed and their bytes are hash-checked.
 
-## Acceptance criteria (pending execution)
+## First Fedora verification: passed
 
-1. Offline applicator tests pass.
-2. Guarded patch applies successfully to the existing upstream checkout
-   without modifying frozen Slices 1–5A providers.
-3. Java compilation and bounded SSA graph integration tests pass.
-4. Existing Slices 1–5A regressions and the new ELF O0/O2 MCP tests pass
-   against the scratch Ghidra installation.
-5. Explicit truncation and deterministic ordering are confirmed, not
-   inferred only from a successful build.
-6. An adversarial review of traversal limits, cycles, P-code sequence
-   identity, and response semantics yields no unfixed correctness defects.
+The user ran the isolated `verify_static_analysis_expansion.sh` workflow on
+the existing Fedora/Ghidra 12.1.3 development checkout and supplied its
+completion transcript:
+
+- Gradle completed with **BUILD SUCCESSFUL in 6s** for the reported packaging
+  segment (8 actionable tasks: 2 executed, 6 up-to-date).
+- Disposable Ghidra test copy and CPython 3.13.15 environment initialized.
+- Existing MCP transport: **3/3 passed** (4.89s).
+- Frozen Slice 5A compiled ELF O0/O2 regression: **2/2 passed** (10.41s).
+- New bounded dataflow compiled ELF O0/O2 regression: **2/2 passed** (10.89s).
+- Script reported `Static-analysis expansion (Slices 1-5A + 5B prerequisite)
+  verification completed.` This confirms earlier Java/Ghidra test steps
+  completed successfully under the script's `set -euo pipefail` behavior.
+
+The transcript supports that specific test environment and scenarios; it
+does not establish complete correctness for all binaries.
+
+## Post-pass review and new tests
+
+Source audit found that we had tested exact/overflow operation caps and
+determinism, but had not directly exercised a cyclic def/use graph or the
+per-varnode and global edge budgets. Additional synthetic Ghidra regressions
+have now been committed to test:
+
+- A cyclic SSA graph terminates without repeated operations in both
+  directions.
+- An oversized forward descendant fanout returns an explicit incomplete
+  result instead of selecting unordered partial descendants.
+- More than 100,000 backward SSA edges triggers `edge_scan_budget` with
+  bounded work, even when repeated inputs lead to only a few distinct
+  operations.
+
+**These newly added tests have not run on Fedora.** No production helper or
+upstream provider-patching code was modified after the successful full
+verification. A targeted Ghidra integration run suffices to validate the new
+tests, subject to rerunning the full workflow if production code changes.
+
+## Remaining acceptance criteria
+
+1. Pull the new graph tests and refresh only the dataflow-owned test file.
+2. Run `BoundedDataFlowSliceIntegrationTest` under the Ghidra 12.1.3 Gradle
+   wrapper. If it fails, investigate and fix with evidence; do not weaken
+   correctness tests merely to obtain a green build.
+3. Confirm the upstream patch is restricted to the SHA-pinned
+   `DataFlowToolProvider.java` and no frozen Slice 1–5A providers changed.
+4. Review API limitations and preserve the explicit incomplete-result
+   semantics before deciding on an engineering freeze.
 
 **NO-GO for interprocedural Slice 5B** until this foundation passes and
 the need for a conservative one-hop join is demonstrated using real
