@@ -83,6 +83,7 @@ async def test_bounded_trace_completion_on_real_elf(
         assert result["truncationReason"] is None, result
         assert result["terminatorsComplete"] is True, result
         assert result["visitedVarnodeCount"] >= 1, result
+        assert result["scannedEdgeCount"] >= 0, result
         assert "within one function" in result["sliceSemantics"], result
         assert result["operations"] == again["operations"], (result, again)
         assert result["terminators"] == again["terminators"], (result, again)
