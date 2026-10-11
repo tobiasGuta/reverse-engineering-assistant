@@ -41,6 +41,7 @@ git diff --check
   --tests '*SemanticProvenanceToolProviderIntegrationTest' \
   --tests '*StackExecutionStateToolProviderIntegrationTest' \
   --tests '*CallBoundaryToolProviderIntegrationTest' \
+  --tests '*BoundedDataFlowSliceIntegrationTest' \
   --info
 
 # Build the exact extension under test. Python/PyGhidra discovers ReVa as a
@@ -111,5 +112,13 @@ XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
 UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_call_boundary_real_binary.py -q
 
+# The pinned upstream trace tools are patched by apply_dataflow_reliability.py.
+# Verify completion metadata and deterministic op ordering on native ELFs.
+printf '\nRunning O0/O2 native ELF bounded dataflow MCP regression...\n'
+GHIDRA_INSTALL_DIR="$SCRATCH_GHIDRA" \
+XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
+UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
+  uv run --python 3.13 --frozen pytest tests/test_dataflow_reliability_real_binary.py -q
+
 echo
-printf '%s\n' 'Static-analysis expansion (Slices 1-4, 5A) verification completed.'
+printf '%s\n' 'Static-analysis expansion (Slices 1-5A + 5B prerequisite) verification completed.'
