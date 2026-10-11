@@ -21,6 +21,7 @@ TEST = Path(
     "src/test.slow/java/reva/tools/callboundary/"
     "CallBoundaryToolProviderIntegrationTest.java"
 )
+REAL_BINARY_TEST = Path("tests/test_call_boundary_real_binary.py")
 
 MANAGER = Path("src/main/java/reva/server/McpServerManager.java")
 TRANSPORT = Path("tests/test_mcp_tools.py")
@@ -80,6 +81,10 @@ class ApplySlice5ATest(unittest.TestCase):
             (BUNDLE / TEST).read_bytes(),
             (self.repo / TEST).read_bytes(),
         )
+        self.assertEqual(
+            (BUNDLE / REAL_BINARY_TEST).read_bytes(),
+            (self.repo / REAL_BINARY_TEST).read_bytes(),
+        )
         manager = (self.repo / MANAGER).read_text()
         self.assertEqual(
             1, manager.count("new CallBoundaryToolProvider(server)"),
@@ -91,11 +96,11 @@ class ApplySlice5ATest(unittest.TestCase):
         self.assertEqual(frozen_before, (self.repo / FROZEN).read_bytes())
 
         saved = [(self.repo / p).read_bytes()
-                 for p in (PROVIDER, TEST, MANAGER, TRANSPORT, FROZEN)]
+                 for p in (PROVIDER, TEST, REAL_BINARY_TEST, MANAGER, TRANSPORT, FROZEN)]
         second = self.run_helper()
         self.assertEqual(0, second.returncode, second.stderr)
         self.assertEqual(saved, [(self.repo / p).read_bytes()
-                                 for p in (PROVIDER, TEST, MANAGER, TRANSPORT, FROZEN)])
+                                 for p in (PROVIDER, TEST, REAL_BINARY_TEST, MANAGER, TRANSPORT, FROZEN)])
 
     def test_conflict_causes_no_partial_writes(self) -> None:
         dest = self.repo / PROVIDER
@@ -108,6 +113,7 @@ class ApplySlice5ATest(unittest.TestCase):
         self.assertIn("Refusing to overwrite", result.stderr)
         self.assertEqual("DO NOT REPLACE\n", dest.read_text())
         self.assertFalse((self.repo / TEST).exists())
+        self.assertFalse((self.repo / REAL_BINARY_TEST).exists())
         self.assertEqual(manager_before, (self.repo / MANAGER).read_bytes())
         self.assertEqual(transport_before, (self.repo / TRANSPORT).read_bytes())
 
@@ -131,6 +137,7 @@ class ApplySlice5ATest(unittest.TestCase):
         self.assertIn("Missing frozen", result.stderr)
         self.assertFalse((self.repo / PROVIDER).exists())
         self.assertFalse((self.repo / TEST).exists())
+        self.assertFalse((self.repo / REAL_BINARY_TEST).exists())
 
 
 if __name__ == "__main__":
