@@ -36,11 +36,13 @@ final class BoundedDataFlowSlice {
     static final int MAX_PENDING_VARNODES = 10000;
     static final int MAX_DESCENDANTS_PER_VARNODE = 10000;
     static final int MAX_INPUTS_PER_OPERATION = 10000;
+    static final int MAX_SCANNED_EDGES = 100000;
 
     enum Direction { BACKWARD, FORWARD }
 
     record Result(Set<PcodeOp> operations, boolean truncated,
-                  String truncationReason, int visitedVarnodes) {}
+                  String truncationReason, int visitedVarnodes,
+                  int scannedEdges) {}
 
     private static final Comparator<PcodeOp> OP_ORDER =
         Comparator.comparing(PcodeOp::getSeqnum);
@@ -67,6 +69,7 @@ final class BoundedDataFlowSlice {
             Collections.newSetFromMap(new IdentityHashMap<Varnode, Boolean>());
         ArrayDeque<Varnode> queue = new ArrayDeque<>();
         int processed = 0;
+        int scannedEdges = 0;
         String reason = null;
 
         List<Varnode> orderedSeeds = new ArrayList<>();
@@ -116,10 +119,18 @@ final class BoundedDataFlowSlice {
                 }
                 List<Varnode> inputs = new ArrayList<>();
                 for (int i = 0; i < op.getNumInputs(); i++) {
+                    if (scannedEdges >= MAX_SCANNED_EDGES) {
+                        reason = "edge_scan_budget";
+                        break;
+                    }
+                    scannedEdges++;
                     Varnode input = op.getInput(i);
                     if (input != null) {
                         inputs.add(input);
                     }
+                }
+                if (reason != null) {
+                    break;
                 }
                 inputs.sort(VARNODE_ORDER);
                 for (Varnode input : inputs) {
@@ -135,7 +146,15 @@ final class BoundedDataFlowSlice {
             else {
                 List<PcodeOp> descendants = new ArrayList<>();
                 Iterator<PcodeOp> uses = node.getDescendants();
+                if (uses == null) {
+                    continue;
+                }
                 while (uses.hasNext()) {
+                    if (scannedEdges >= MAX_SCANNED_EDGES) {
+                        reason = "edge_scan_budget";
+                        break;
+                    }
+                    scannedEdges++;
                     if (descendants.size() >= MAX_DESCENDANTS_PER_VARNODE) {
                         reason = "descendant_fanout_budget";
                         break;
@@ -170,7 +189,7 @@ final class BoundedDataFlowSlice {
         List<PcodeOp> ordered = new ArrayList<>(included);
         ordered.sort(OP_ORDER);
         return new Result(Collections.unmodifiableSet(new LinkedHashSet<>(ordered)),
-            reason != null, reason, processed);
+            reason != null, reason, processed, scannedEdges);
     }
 
     private static boolean isCall(PcodeOp op) {
