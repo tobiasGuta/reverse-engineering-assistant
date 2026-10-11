@@ -1,6 +1,6 @@
-# ReVa Static Analysis Expansion — Slices 1–4 + 5A (development)
+# ReVa Static Analysis Expansion — Slices 1–4 + Frozen 5A
 
-This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. Slice 5A is development-only and is NOT frozen; its initial automated Fedora verification passed, but the new native ELF regression and independent correctness review are pending. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
+This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. **Slice 5A's bounded call-boundary contract was frozen on 2026-10-11**, after Ghidra integration tests and real Linux ELF `-O0`/`-O2` regressions passed on Fedora. It remains a development-branch patch, not an installed or merged production release. The expansion deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
 > Repository note: this GitHub repository was created independently rather than as a GitHub fork, so the branch stores the expansion source and guarded application tooling against a pinned upstream revision.
 
@@ -16,13 +16,46 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 
 **Slice 4 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF. The automated gate also caught and corrected an invalid test assumption around unresolved callee purge: known zero-purge callees preserve a known post-call state, while unresolved purge/calling-convention facts may legitimately yield unknown state. No further Slice 4 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `STACK_EXECUTION_STATE_VALIDATION.md` for the frozen invariants and validation record.
 
-## Slice 5A — development status (initial ELF validation passed; post-review tests pending)
+## Slice 5A — frozen 2026-10-11
 
-The branch adds `inspect-call-boundary`, a bounded, read-only tool that describes a machine call and separate caller/callee High P-code evidence, including direct target resolution, arguments, formal prototype context, and modeled return sites. It labels any positional argument mapping a **decompiler candidate**, not a proven runtime relationship. Indirect, external, and thunk calls do not receive invented mappings. No cross-function propagation is claimed; that remains a possible later 5B stage.
+`inspect-call-boundary` gives a bounded, read-only observation of a machine
+call and distinct caller/callee High P-code evidence. It reports call identity,
+resolved direct-call targets where available, argument varnodes, prototype
+context, and modeled return sites. Positional formal mappings are **static
+decompiler candidates**, not proof of runtime equivalence. Unresolved
+indirect calls, external targets, and thunks do not receive invented
+parameter mappings. This tool **does not** implement cross-function tracing.
 
-`apply_call_boundary_slice.py` applies only the new provider and validation tests to an existing frozen Slices 1–4 checkout and guards registration edits. The normal `bootstrap_local_test.sh` also applies it after Slices 1–4. The initial full `verify_static_analysis_expansion.sh` run passed on Fedora/Ghidra 12.1.3: Java/Gradle, Java integration tests, extension packaging, and three isolated Python MCP transport tests. The guarded applicator's four offline tests passed separately.\n\nAn additional **native ELF acceptance gate is now authored but not yet run**. `tests/test_call_boundary_real_binary.py` builds x86-64 ELF fixtures at `-O0` and `-O2`, imports them into the scratch Ghidra project using MCP, discovers direct call sites through `get-function-cfg`, and checks call-boundary target/argument/return evidence plus unchanged binary hashes. The binary files are never executed. `verify_static_analysis_expansion.sh` includes this gate after the MCP transport check. Do not consider 5A frozen before the new gate passes and an independent correctness review.
+**Verification:** full Gradle/Ghidra integration, extension packaging,
+isolated MCP transport (**3/3**), and compiled native Linux ELF regressions
+at `-O0` and `-O2` (**2/2**, including truncation negative controls)
+passed on Fedora. After an adversarial review, additional Ghidra prototype
+guard regressions for variadic and custom variable storage also completed
+with `BUILD SUCCESSFUL` through Ghidra's Gradle wrapper. The provider
+source stayed unchanged between that final targeted test and the earlier
+full verification. The guarded Slice 5A installer has **4/4** offline
+regression tests. Frozen Slice 1–4 provider files were not modified.
 
-The first Fedora run passed the complete Gradle/Ghidra and isolated MCP pipeline, including two real ELF cases compiled at `-O0` and `-O2`. A subsequent source review found an incomplete-return-scan classification error; this is corrected on the development branch with a classification regression and additional bounded-argument native ELF coverage. Those **post-review revisions still require Fedora verification**. See [CALL_BOUNDARY_VALIDATION.md](CALL_BOUNDARY_VALIDATION.md) for the precise evidence, correction details, and release gates.\n\nThe existing upstream dataflow provider has a potentially silent 500-operation truncation path. It is not changed by 5A; that limitation must be fixed and separately verified before implementing any dependent 5B value-flow traversal.
+`apply_call_boundary_slice.py` adds or refreshes Slice 5A-owned files in
+an existing Slices 1–4 checkout and guards registration edits. The verifier
+runs the 5A tests against an isolated development extension and disposable
+Ghidra test copy. None of these steps requests a change to the normal
+Codex/ReVa MCP configuration or stable Ghidra installation.
+
+**Frozen scope:** candidate-only static call-boundary evidence, explicit
+uncertainty/truncation, finite result caps and decompiler timeouts, with
+no target execution, database changes, or interprocedural propagation.
+Other architectures, complex hidden/indirect ABI layouts, and aggressive
+compiler optimizations remain unproven beyond the named test cases.
+
+See [CALL_BOUNDARY_VALIDATION.md](CALL_BOUNDARY_VALIDATION.md) for the
+verified checks, corrected defects, remaining limitations, and scope of
+the freeze.
+
+The existing upstream intraprocedural dataflow provider has a potential
+silent 500-operation truncation path. That unrelated implementation remains
+unchanged here and must be addressed before a future Slice 5B attempts
+bounded cross-function value-flow tracing.
 
 ## New MCP tools
 
