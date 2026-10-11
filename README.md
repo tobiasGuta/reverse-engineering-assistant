@@ -1,6 +1,6 @@
 # ReVa Static Analysis Expansion — Slices 1–4 + 5A (development)
 
-This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. Slice 5A is development-only and is NOT frozen or live-verified. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
+This branch contains a **general-purpose, read-only** reverse-engineering expansion for ReVa. Slice 5A is development-only and is NOT frozen; its initial automated Fedora verification passed, but the new native ELF regression and independent correctness review are pending. It deliberately avoids CTF-, malware-, password-, flag-, Rust-, Go-, DWARF-, or attribution-specific heuristics.
 
 > Repository note: this GitHub repository was created independently rather than as a GitHub fork, so the branch stores the expansion source and guarded application tooling against a pinned upstream revision.
 
@@ -20,7 +20,7 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 
 The branch adds `inspect-call-boundary`, a bounded, read-only tool that describes a machine call and separate caller/callee High P-code evidence, including direct target resolution, arguments, formal prototype context, and modeled return sites. It labels any positional argument mapping a **decompiler candidate**, not a proven runtime relationship. Indirect, external, and thunk calls do not receive invented mappings. No cross-function propagation is claimed; that remains a possible later 5B stage.
 
-`apply_call_boundary_slice.py` applies only the new provider/test to an existing frozen Slices 1–4 checkout and guards registration edits. The normal `bootstrap_local_test.sh` also applies it after Slices 1–4. `verify_static_analysis_expansion.sh` now runs the 5A integration class in the same isolated testing workflow. **We cannot claim this slice passes until the actual Ghidra 12.1.x Gradle and PyGhidra tests and a real-binary read-only regression run on Fedora.**
+`apply_call_boundary_slice.py` applies only the new provider and validation tests to an existing frozen Slices 1–4 checkout and guards registration edits. The normal `bootstrap_local_test.sh` also applies it after Slices 1–4. The initial full `verify_static_analysis_expansion.sh` run passed on Fedora/Ghidra 12.1.3: Java/Gradle, Java integration tests, extension packaging, and three isolated Python MCP transport tests. The guarded applicator's four offline tests passed separately.\n\nAn additional **native ELF acceptance gate is now authored but not yet run**. `tests/test_call_boundary_real_binary.py` builds x86-64 ELF fixtures at `-O0` and `-O2`, imports them into the scratch Ghidra project using MCP, discovers direct call sites through `get-function-cfg`, and checks call-boundary target/argument/return evidence plus unchanged binary hashes. The binary files are never executed. `verify_static_analysis_expansion.sh` includes this gate after the MCP transport check. Do not consider 5A frozen before the new gate passes and an independent correctness review.
 
 The existing upstream dataflow provider has a potentially silent 500-operation truncation path. It is not changed by 5A; that limitation must be fixed and separately verified before implementing any dependent 5B value-flow traversal.
 
