@@ -76,6 +76,7 @@ def patch_provider(text: str) -> str:
             result.put("truncationReason", slice.truncationReason());
             result.put("operationLimit", MAX_SLICE_SIZE);
             result.put("visitedVarnodeCount", slice.visitedVarnodes());
+            result.put("scannedEdgeCount", slice.scannedEdges());
             result.put("terminatorsComplete", !slice.truncated());
             result.put("sliceSemantics",
                 "Bounded Ghidra High P-code SSA graph walk within one function. " +
