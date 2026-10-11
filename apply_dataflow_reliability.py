@@ -18,6 +18,7 @@ DATAFLOW = Path("src/main/java/reva/tools/dataflow/DataFlowToolProvider.java")
 OWNED = (
     Path("src/main/java/reva/tools/dataflow/BoundedDataFlowSlice.java"),
     Path("src/test.slow/java/reva/tools/dataflow/BoundedDataFlowSliceIntegrationTest.java"),
+    Path("tests/test_dataflow_reliability_real_binary.py"),
 )
 
 
