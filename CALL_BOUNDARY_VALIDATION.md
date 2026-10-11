@@ -1,6 +1,6 @@
 # ReVa Slice 5A — Call-boundary evidence validation
 
-**Status: UNFROZEN; further host verification required.**
+**Status: UNFROZEN; post-review ELF verification passed; final prototype-guard regression pending.**
 
 Scope: a single read-only `inspect-call-boundary` observation of one Ghidra
 machine call. The tool returns separate caller/callee High P-code models,
@@ -25,8 +25,14 @@ The user ran `verify_static_analysis_expansion.sh` on the existing
 - The submitted completion log is terminal output; it is not an archived,
   independently authenticated benchmark record.
 
-These results apply to the branch revision **before** the post-test review
-corrections below. A subsequent green run is required before closure.
+**Second reported Fedora run:** the refreshed Slice 5A branch containing R1/R2
+corrections completed the entire isolated verifier successfully. MCP transport:
+**3/3 passed** (4.65s); real native ELF regression: **2/2 passed** (9.98s),
+including the two-argument truncation negative-control assertions at both
+`-O0` and `-O2`. The terminal output reported
+`Static-analysis expansion (Slices 1-4, 5A) verification completed.`
+These results are based on user-supplied terminal output, and support those
+specific checks, not all possible compiler or ABI configurations.
 
 ## Post-test adversarial review
 
@@ -50,10 +56,25 @@ callee and a separate caller, referenced from `main`. Each optimized mode
 requests `maxArguments=1` at the actual native call site, and must report
 `argumentsTruncated=true`, exactly one returned argument, and no candidate
 formal index. The machine calls were independently checked with local
-`cc` and `objdump` for both `-O0` and `-O2`, but the revised MCP/Ghidra
-tests **have not yet run on Fedora**.
+`cc` and `objdump` for both `-O0` and `-O2`, and the revised MCP/Ghidra
+tests **passed on Fedora** in the second verifier run.
 
-### R3. Design limits retained intentionally
+### R3. Variadic and custom variable-storage signatures
+
+A separate source review of Ghidra 12.1.3's `Function` API and decompiler
+model confirms that variadic signatures and special parameter storage
+require conservative treatment. The Slice 5A implementation already
+rejects positional mapping when `hasVarArgs()` or
+`hasCustomVariableStorage()` is true, but our initial test suite did not
+assert these paths end-to-end.
+
+**Additional tests committed:** synthetic native Ghidra integration cases now
+mark the callee variadic and custom-storage, respectively, and verify that
+`inspect-call-boundary` retains direct callee identity but sets
+`mappingStatus=ambiguous_prototype_or_storage` and emits **no**
+`candidateFormalIndex`. These tests **have not yet been run on Fedora**.
+
+### R4. Design limits retained intentionally
 
 - Argument positions are **decompiler-derived candidates**, not proven
   machine ABI equivalence or actual runtime value correspondence.
@@ -70,19 +91,20 @@ tests **have not yet run on Fedora**.
 
 ## Remaining acceptance gates
 
-1. Pull the updated Slice 5A branch and refresh **only Slice 5A-owned**
-   files into the existing local upstream checkout.
-2. Re-run the offline guarded-applicator tests.
-3. Re-run the entire isolated `verify_static_analysis_expansion.sh`
-   pipeline, including the revised native ELF O0/O2 and bounded-argument
-   tests and the return-scan classification regression.
-4. Examine any failed decompiler recovery or false-positive mappings and
-   correct the implementation rather than weakening assertions arbitrarily.
-5. Confirm via a diff-based review that the frozen Slices 1–4 Java providers
-   remain unchanged.
-6. Complete an adversarial correctness review of special ABI layouts,
-   C++ hidden parameters, variance in compiler outputs, and behavior when
-   indirect or external targets are unresolved before freezing.
+1. Pull the development branch and refresh **only Slice 5A-owned** files
+   in the existing upstream checkout. The existing Slices 1–4 provider files
+   must remain unchanged.
+2. Run the full isolated verifier again, including the two new Ghidra
+   integration tests for variadic and custom-storage prototypes; verify
+   the native ELF O0/O2 acceptance suite remains green.
+3. If a new test fails, diagnose the underlying Ghidra state and fix the
+   implementation or fixture only when justified by evidence.
+4. Recheck the GitHub base-to-branch comparison and verify the API/ABI
+   uncertainty contract. Residual limitations, including C++ auto-parameters,
+   unknown indirect targets, external thunks, other architectures, and
+   cross-function propagation, must remain explicitly documented.
+5. Freeze only after all currently required checks pass and the scope
+   is judged reliable for *bounded, candidate-only call-boundary evidence*.
 
 **Release gate:** remain UNFROZEN and unmerged until all required checks
 are supported by evidence. Test completion is not, by itself, evidence of
