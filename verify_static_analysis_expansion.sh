@@ -99,5 +99,17 @@ XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
 UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_mcp_tools.py -q
 
+# Real compiled ELF regression uses the same disposable extension and an
+# isolated MCP stdio project. The ELF fixture is compiled but never executed.
+if ! command -v cc >/dev/null 2>&1; then
+  echo "error: a C compiler (cc) is required for Slice 5A native ELF tests" >&2
+  exit 2
+fi
+printf '\nRunning O0/O2 native ELF MCP call-boundary regression...\n'
+GHIDRA_INSTALL_DIR="$SCRATCH_GHIDRA" \
+XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
+UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
+  uv run --python 3.13 --frozen pytest tests/test_call_boundary_real_binary.py -q
+
 echo
 printf '%s\n' 'Static-analysis expansion (Slices 1-4, 5A) verification completed.'
