@@ -171,6 +171,83 @@ public class BoundedDataFlowSliceIntegrationTest
         assertEquals(a.truncated(), b.truncated());
     }
 
+    @Test
+    public void testCyclicDefUseGraphTerminatesWithoutDuplicateOperations() {
+        VarnodeAST first = new VarnodeAST(addr(0x01007000L), 4, 1);
+        VarnodeAST second = new VarnodeAST(addr(0x01007010L), 4, 2);
+        PcodeOp firstToSecond = new PcodeOp(
+            addr(0x01000330L), 1, PcodeOp.COPY,
+            new Varnode[] { first }, second);
+        PcodeOp secondToFirst = new PcodeOp(
+            addr(0x01000331L), 2, PcodeOp.COPY,
+            new Varnode[] { second }, first);
+        first.addDescendant(firstToSecond);
+        second.addDescendant(secondToFirst);
+        second.setDef(firstToSecond);
+        first.setDef(secondToFirst);
+
+        for (BoundedDataFlowSlice.Direction direction :
+                BoundedDataFlowSlice.Direction.values()) {
+            var slice = BoundedDataFlowSlice.collect(
+                List.of(first), direction, 500);
+            assertFalse("cycle is finite once SSA nodes are visited",
+                slice.truncated());
+            assertNull(slice.truncationReason());
+            assertEquals(2, slice.visitedVarnodes());
+            assertEquals(
+                Set.of(firstToSecond, secondToFirst),
+                slice.operations());
+            assertEquals(2, slice.operations().size());
+        }
+    }
+
+    @Test
+    public void testOversizedForwardFanoutReportsIncompleteWithoutPartialSelection() {
+        VarnodeAST seed = new VarnodeAST(addr(0x01008000L), 4, 1);
+        for (int i = 0; i <= BoundedDataFlowSlice.MAX_DESCENDANTS_PER_VARNODE; i++) {
+            PcodeOp op = new PcodeOp(
+                addr(0x01000400L + i), i, PcodeOp.COPY,
+                new Varnode[] { seed }, null);
+            seed.addDescendant(op);
+        }
+
+        var slice = BoundedDataFlowSlice.collect(
+            List.of(seed), BoundedDataFlowSlice.Direction.FORWARD, 500);
+        assertTrue(slice.truncated());
+        assertEquals("descendant_fanout_budget", slice.truncationReason());
+        assertTrue(
+            "Do not select an unordered partial subset from oversized fanout",
+            slice.operations().isEmpty());
+    }
+
+    @Test
+    public void testGlobalEdgeBudgetReportsIncomplete() {
+        final int perOp = BoundedDataFlowSlice.MAX_INPUTS_PER_OPERATION;
+        VarnodeAST[] nodes = new VarnodeAST[12];
+        for (int i = 0; i < nodes.length; i++) {
+            nodes[i] = new VarnodeAST(
+                addr(0x01009000L + 8L * i), 4, i);
+        }
+        for (int i = 0; i < nodes.length - 1; i++) {
+            Varnode[] inputs = new Varnode[perOp];
+            Arrays.fill(inputs, nodes[i + 1]);
+            PcodeOp op = new PcodeOp(
+                addr(0x01000500L + i), i,
+                PcodeOp.MULTIEQUAL, inputs, nodes[i]);
+            nodes[i].setDef(op);
+        }
+
+        var slice = BoundedDataFlowSlice.collect(
+            List.of(nodes[0]), BoundedDataFlowSlice.Direction.BACKWARD, 500);
+        assertTrue(slice.truncated());
+        assertEquals("edge_scan_budget", slice.truncationReason());
+        assertEquals(BoundedDataFlowSlice.MAX_SCANNED_EDGES, slice.scannedEdges());
+        assertEquals(
+            "visited nodes must be bounded, even with many duplicate input edges",
+            11, slice.visitedVarnodes());
+        assertTrue(slice.operations().size() < 500);
+    }
+
     private static List<String> sequenceList(Set<PcodeOp> operations) {
         return operations.stream()
             .map(op -> op.getSeqnum().toString()).toList();
