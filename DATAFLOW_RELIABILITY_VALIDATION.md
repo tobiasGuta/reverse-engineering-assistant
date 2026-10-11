@@ -1,118 +1,125 @@
-# ReVa — Dataflow Reliability Foundation (before Slice 5B)
+# ReVa — Dataflow Reliability Foundation Validation
 
-**Status: DEVELOPMENT; first full Fedora/Ghidra verification passed, with additional adversarial graph tests pending.**
-**Parent branch:** `feat/call-boundary-evidence` (frozen Slice 5A).
-**Upstream pin:** `cyberkaida/reverse-engineering-assistant` commit
-`01a154a8edf233b02a0e7707e2ff5933893c6d53`; original
-`DataFlowToolProvider.java` Git blob
+**Status: FROZEN — 2026-10-11 (engineering scope only).**
+**Development branch:** `feat/dataflow-reliability-foundation`, based on frozen
+Slice 5A branch `feat/call-boundary-evidence`.
+**Upstream pin:** `cyberkaida/reverse-engineering-assistant` at
+`01a154a8edf233b02a0e7707e2ff5933893c6d53`;
+original `DataFlowToolProvider.java` Git blob
 `4966146539a743029ace1a505b4a8c7fa9a7cccd`.
 
-## Source-confirmed defect
+This freeze concerns **deterministic, bounded, explicit-completeness
+intraprocedural SSA tracing**. It is not a merge, production installation,
+security proof, or implementation of interprocedural Slice 5B.
 
-The pinned upstream DataFlowToolProvider calls Ghidra 12.1.3
+## Source-confirmed original defect
+
+Pinned upstream ReVa used Ghidra
 `DecompilerUtils.getBackwardSliceToPCodeOps` and
-`getForwardSliceToPCodeOps` independently for every varnode at a given
-instruction, obtains entire SSA slices in unbounded hash sets, and then
-selects 500 operations by hash-set iteration order. Its response has
-no completion status. On large graphs the selection can therefore be
-incomplete, nondeterministic, and indistinguishable from a full slice.
+`getForwardSliceToPCodeOps` to materialize full slices in hash sets,
+then returned at most 500 P-code operations chosen by unordered iteration.
+The response did not distinguish complete from truncated results.
+Ghidra 12.1.3 source confirms that these utilities traverse SSA def/use
+links and stop at CALL/CALLIND boundaries.
 
-The Ghidra helper's actual source was inspected at tag
-`Ghidra_12.1.3_build`: it traverses SSA def/use edges and treats CALL
-and CALLIND operations as traversal boundaries.
+## Frozen implementation
 
-## Implemented remedy
+The new `BoundedDataFlowSlice` uses an explicit, deterministic worklist
+instead of materializing a full slice before imposing resource caps.
 
-- New `BoundedDataFlowSlice` performs an explicit worklist traversal
-  instead of building full Ghidra slices before imposing a cap.
-- Sorts seed Varnodes and each forward descendant list; output operations
-  are ordered by Ghidra `SequenceNumber`. Backward input traversal
-  is also ordered. Identity-based visited sets prevent cycles.
-- Caps unique returned operations at **500**, visited varnodes at
-  **10,000**, queued varnodes at **10,000**, per-varnode descendants
-  at **10,000**, P-code inputs per operation at **10,000**, and total traversed\n  def/use edges at **100,000**.
-- Crossing any limit marks the result **truncated** with a reason.
-  Exactly 500 operations is not automatically marked truncated; only
-  genuinely unprocessed graph work produces a partial status.
-- Preserves the original tool names and adds `complete`, `truncated`,
-  `truncationReason`, `operationLimit`, `visitedVarnodeCount`,
-  `terminatorsComplete`, and a static-slice semantics notice.
-  Terminators found in incomplete slices remain explicitly partial.
-- Backward and forward traversal both stop propagation beyond CALL
-  and CALLIND operations. No memory alias solver, runtime execution,
-  or interprocedural propagation is introduced.
+- Sorts seed Varnodes, backward P-code inputs, forward P-code descendants,
+  and final P-code operations. Deduplicates visited varnodes and operations.
+- Preserves the original `trace-data-flow-forward` and
+  `trace-data-flow-backward` names.
+- Returns `complete`, `truncated`, `truncationReason`,
+  `operationLimit`, `visitedVarnodeCount`, `scannedEdgeCount`,
+  `terminatorsComplete`, and a static-slice semantics statement.
+- Treats operations and terminators from incomplete slices as **partial
+  evidence**; their absence is never proof of absence.
+- Stops propagation at CALL/CALLIND and does **not** cross a function
+  boundary or perform memory-alias analysis.
 
-## Installation and regression boundaries
+| Budget | Hard limit |
+|---|---:|
+| Returned P-code operations | 500 |
+| Visited SSA varnodes | 10,000 |
+| Queued varnodes | 10,000 |
+| Descendant fanout per varnode | 10,000 |
+| Inputs per P-code operation | 10,000 |
+| Total scanned def/use edges | 100,000 |
 
-`apply_dataflow_reliability.py` only patches the pinned upstream
-`src/main/java/reva/tools/dataflow/DataFlowToolProvider.java`, with
-explicit old-code anchors, and adds new dataflow-owned helper and test
-files. It rejects unexpected upstream blobs or missing frozen Slice
-1–5A provider registrations. It does not install anything into Ghidra
-or commit into the source checkout.
+Hitting a budget reports a typed truncation reason. A slice containing
+exactly 500 operations can be complete when traversal has exhausted all
+relevant work.
 
-Added tests:
-- Ghidra SSA graph tests for exact budget, budget overflow, repeated
-  deterministic output, descendant-order reversal, seed-order reversal,
-  and CALL barriers.
-- Offline applicator negative controls for wrong upstream SHA and
-  missing frozen-slice registrations.
-- Real native O0/O2 compiled ELF tests through an isolated MCP stdio
-  transport; verify completion metadata and repeated output ordering.
-  Fixtures are never executed and their bytes are hash-checked.
+The `apply_dataflow_reliability.py` applicator verifies the pinned
+upstream blob before patching only
+`src/main/java/reva/tools/dataflow/DataFlowToolProvider.java`.
+It adds the new dataflow helper and test files, and refuses unexpected
+upstream or missing frozen Slice 1–5A registrations.
+It does not install an extension or alter the live Codex MCP server.
 
-## First Fedora verification: passed
+## Fedora acceptance evidence
 
-The user ran the isolated `verify_static_analysis_expansion.sh` workflow on
-the existing Fedora/Ghidra 12.1.3 development checkout and supplied its
-completion transcript:
+**Full isolated verification (user-reported):**
+`verify_static_analysis_expansion.sh` completed successfully on Fedora
+with Ghidra 12.1.3. The supplied terminal output reported:
 
-- Gradle completed with **BUILD SUCCESSFUL in 6s** for the reported packaging
-  segment (8 actionable tasks: 2 executed, 6 up-to-date).
-- Disposable Ghidra test copy and CPython 3.13.15 environment initialized.
-- Existing MCP transport: **3/3 passed** (4.89s).
-- Frozen Slice 5A compiled ELF O0/O2 regression: **2/2 passed** (10.41s).
-- New bounded dataflow compiled ELF O0/O2 regression: **2/2 passed** (10.89s).
-- Script reported `Static-analysis expansion (Slices 1-5A + 5B prerequisite)
-  verification completed.` This confirms earlier Java/Ghidra test steps
-  completed successfully under the script's `set -euo pipefail` behavior.
+- Gradle: **BUILD SUCCESSFUL**.
+- Disposable Ghidra/PyGhidra CPython 3.13.15 setup completed.
+- MCP transport: **3/3 PASS** (4.89 seconds).
+- Previously frozen Slice 5A compiled ELF regression:
+  **2/2 PASS**, `-O0` and `-O2` (10.41 seconds).
+- Bounded dataflow compiled ELF regression:
+  **2/2 PASS**, `-O0` and `-O2` (10.89 seconds).
+- Final workflow marker:
+  `Static-analysis expansion (Slices 1-5A + 5B prerequisite)
+  verification completed.`
+- The verification script uses `set -euo pipefail`; successful
+  completion supports that the preceding Java/Ghidra tests and
+  extension packaging also succeeded.
 
-The transcript supports that specific test environment and scenarios; it
-does not establish complete correctness for all binaries.
+**Post-pass adversarial tests (user-reported):**
+After the full run, three additional Ghidra integration tests were
+committed, without changing the production helper or upstream patch:
 
-## Post-pass review and new tests
+1. A cyclic SSA graph terminates in both directions without duplicate
+   operations.
+2. Excessive forward descendant fanout yields an explicit incomplete
+   result without sampling arbitrary descendants.
+3. A backward SSA graph exceeding the 100,000-edge budget yields
+   `edge_scan_budget` and bounded work.
 
-Source audit found that we had tested exact/overflow operation caps and
-determinism, but had not directly exercised a cyclic def/use graph or the
-per-varnode and global edge budgets. Additional synthetic Ghidra regressions
-have now been committed to test:
+The targeted Gradle integration run completed with:
+`BUILD SUCCESSFUL in 23s`,
+`11 actionable tasks: 2 executed, 9 up-to-date`.
 
-- A cyclic SSA graph terminates without repeated operations in both
-  directions.
-- An oversized forward descendant fanout returns an explicit incomplete
-  result instead of selecting unordered partial descendants.
-- More than 100,000 backward SSA edges triggers `edge_scan_budget` with
-  bounded work, even when repeated inputs lead to only a few distinct
-  operations.
+**Source scope check:** GitHub comparison against frozen
+`feat/call-boundary-evidence` showed no changes to existing
+Slice 1–5A production provider files. The reliability changes are
+separate dataflow-owned code, a guarded upstream patch application
+script, tests, verifier updates, and documentation.
 
-**These newly added tests have not run on Fedora.** No production helper or
-upstream provider-patching code was modified after the successful full
-verification. A targeted Ghidra integration run suffices to validate the new
-tests, subject to rerunning the full workflow if production code changes.
+These are user-provided terminal results, not a third-party audit.
+The reported tests establish the named acceptance cases, not universal
+correctness on arbitrary Ghidra graphs, binaries, architectures, or
+calling conventions.
 
-## Remaining acceptance criteria
+## Freeze decision and invariants
 
-1. Pull the new graph tests and refresh only the dataflow-owned test file.
-2. Run `BoundedDataFlowSliceIntegrationTest` under the Ghidra 12.1.3 Gradle
-   wrapper. If it fails, investigate and fix with evidence; do not weaken
-   correctness tests merely to obtain a green build.
-3. Confirm the upstream patch is restricted to the SHA-pinned
-   `DataFlowToolProvider.java` and no frozen Slice 1–5A providers changed.
-4. Review API limitations and preserve the explicit incomplete-result
-   semantics before deciding on an engineering freeze.
+**ACCEPTED/FROZEN** for the narrowly defined dataflow reliability
+foundation. Preserve the completion and ordering contract, finite
+work budgets, and CALL/CALLIND traversal boundaries. Reopen only for
+demonstrated correctness, safety, performance, or compatibility defects,
+with targeted regression evidence.
 
-**NO-GO for interprocedural Slice 5B** until this foundation passes and
-the need for a conservative one-hop join is demonstrated using real
-reverse-engineering evidence. A 500-operation budget is a resource
-safety choice, not a guarantee that every function has been analyzed
-completely.
+**Not claimed:** global memory-alias soundness, inferred runtime execution,
+interprocedural equivalence, recognition of every indirect target,
+cross-binary portability, or full analysis of a trace marked truncated.
+
+**Next scope:** A future one-hop Slice 5B may combine frozen call-boundary
+evidence with bounded local SSA slices, but must be independently
+designed and tested. A safe one-hop join requires explicit source/target
+identity, argument-to-formal uncertainty, partial-slice propagation,
+recursion/thunk handling, and evidence of utility on real reverse
+engineering tasks. No such join is implemented or frozen here.
