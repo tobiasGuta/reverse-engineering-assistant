@@ -303,11 +303,28 @@ public final class CallBoundaryToolProvider extends AbstractToolProvider {
         result.put("calleeReturnSites", returnEvidence);
         result.put("returnSitesTruncated",
             returnScanTruncated || returnCount > returnEvidence.size());
-        result.put("returnRelationship",
-            call.getOutput() == null ? "no_caller_output_model" :
-            returnCount == 0 ? "callee_return_unavailable" :
-            "separate_caller_and_callee_models_not_runtime_equivalence");
+        result.put("returnRelationship", classifyReturnRelationship(
+            call.getOutput() != null, returnScanTruncated, returnCount));
         return result;
+    }
+
+    /**
+     * Never convert partial return-site coverage into a negative finding.
+     * Caller/callee return models remain independent static evidence even
+     * when both sides are available.
+     */
+    static String classifyReturnRelationship(boolean hasCallerOutput,
+            boolean calleeScanTruncated, int observedReturnCount) {
+        if (calleeScanTruncated) {
+            return "incomplete_callee_return_scan";
+        }
+        if (!hasCallerOutput) {
+            return "no_caller_output_model";
+        }
+        if (observedReturnCount == 0) {
+            return "callee_return_unavailable";
+        }
+        return "separate_caller_and_callee_models_not_runtime_equivalence";
     }
 
     private HighFunction decompile(DecompInterface d, Function function) {
