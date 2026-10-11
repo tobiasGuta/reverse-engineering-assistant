@@ -76,7 +76,7 @@ class GuardedDataflowPatchTests(unittest.TestCase):
             module.UPSTREAM_BLOB,
         )
         self.assertEqual(
-            "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0",
+            "9daeafb9864cf43055ae93beb0afd6c7d144bfa4",
             module.git_blob_sha(b"test\n"),
         )
 
