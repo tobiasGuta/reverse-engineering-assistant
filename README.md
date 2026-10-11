@@ -31,11 +31,11 @@ patch to the existing upstream dataflow provider in a Slices 1–5A checkout.
 The new worklist walks High P-code varnode def/use chains and terminates
 at the `CALL`/`CALLIND` boundary, matching Ghidra's intended
 intraprocedural semantics. It sorts seeds, descendants and output P-code
-operations by stable graph identities before applying finite work budgets.
+operations by stable graph identities before applying finite operation, varnode, fanout, and total-edge work budgets.
 
 Existing `trace-data-flow-forward`/`trace-data-flow-backward` now expose
 `complete`, `truncated`, `truncationReason`, `operationLimit`,
-`visitedVarnodeCount`, and `terminatorsComplete`. A partial trace
+`visitedVarnodeCount`, `scannedEdgeCount`, and `terminatorsComplete`. A partial trace
 is **not evidence of absence** for values or terminators.
 
 Regression coverage includes exact 500/501 operation boundaries,
