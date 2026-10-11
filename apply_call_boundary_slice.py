@@ -19,6 +19,7 @@ TEST = Path(
     "src/test.slow/java/reva/tools/callboundary/"
     "CallBoundaryToolProviderIntegrationTest.java"
 )
+REAL_BINARY_TEST = Path("tests/test_call_boundary_real_binary.py")
 
 
 def replacement(contents: str, old: str, new: str, label: str) -> str:
@@ -95,7 +96,7 @@ def main() -> int:
             "Slice 5A MCP catalog expectation",
         )
 
-    for path in (PROVIDER, TEST):
+    for path in (PROVIDER, TEST, REAL_BINARY_TEST):
         source = bundle / path
         target = repo / path
         if not source.is_file():
@@ -107,7 +108,7 @@ def main() -> int:
                     "Use --refresh only for Slice 5A-owned files."
                 )
 
-    for path in (PROVIDER, TEST):
+    for path in (PROVIDER, TEST, REAL_BINARY_TEST):
         source = bundle / path
         target = repo / path
         target.parent.mkdir(parents=True, exist_ok=True)
