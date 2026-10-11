@@ -94,9 +94,14 @@ mark the callee variadic and custom-storage, respectively, and verify that
 1. Pull the development branch and refresh **only Slice 5A-owned** files
    in the existing upstream checkout. The existing Slices 1–4 provider files
    must remain unchanged.
-2. Run the full isolated verifier again, including the two new Ghidra
-   integration tests for variadic and custom-storage prototypes; verify
-   the native ELF O0/O2 acceptance suite remains green.
+2. Since the second complete verifier passed and only Java *integration
+   tests and validation documentation* were modified afterward, run
+   `gradle integrationTest --tests '*CallBoundaryToolProviderIntegrationTest'`
+   against the unchanged Slice 5A provider. This validates the two new
+   Ghidra prototype guards plus all existing Slice 5A synthetic cases.
+   The already-green native ELF O0/O2 and Python MCP transport acceptance
+   remains applicable to the identical provider source. Repeat the full
+   isolated verifier if any production/provider code changes during fixes.
 3. If a new test fails, diagnose the underlying Ghidra state and fix the
    implementation or fixture only when justified by evidence.
 4. Recheck the GitHub base-to-branch comparison and verify the API/ABI
