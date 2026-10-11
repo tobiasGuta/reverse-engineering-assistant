@@ -214,6 +214,68 @@ public class CallBoundaryToolProviderIntegrationTest
         });
     }
     @Test
+    public void testVariadicPrototypeCannotProducePositionalMapping()
+            throws Exception {
+        String path = openFixture();
+        int transaction = program.startTransaction(
+            "mark synthetic callee as variadic");
+        try {
+            Function callee =
+                program.getFunctionManager().getFunctionAt(address(CALLEE));
+            assertNotNull(callee);
+            callee.setVarArgs(true);
+            assertTrue(callee.hasVarArgs());
+        }
+        finally {
+            program.endTransaction(transaction, true);
+        }
+
+        JsonNode report = inspect(path, MAIN + 4, 16);
+        JsonNode call = report.path("calls").get(0);
+        assertEquals("direct_internal", call.path("targetKind").asText());
+        assertEquals("transform", call.path("callee").path("name").asText());
+        assertTrue(call.path("variadic").asBoolean());
+        assertEquals("ambiguous_prototype_or_storage",
+            call.path("mappingStatus").asText());
+        for (JsonNode argument : call.path("arguments")) {
+            assertFalse("variadic call arguments must not be mapped to " +
+                "fixed formals by position alone",
+                argument.has("candidateFormalIndex"));
+        }
+    }
+
+    @Test
+    public void testCustomStorageCannotProducePositionalMapping()
+            throws Exception {
+        String path = openFixture();
+        int transaction = program.startTransaction(
+            "mark synthetic callee as custom-storage");
+        try {
+            Function callee =
+                program.getFunctionManager().getFunctionAt(address(CALLEE));
+            assertNotNull(callee);
+            callee.setCustomVariableStorage(true);
+            assertTrue(callee.hasCustomVariableStorage());
+        }
+        finally {
+            program.endTransaction(transaction, true);
+        }
+
+        JsonNode report = inspect(path, MAIN + 4, 16);
+        JsonNode call = report.path("calls").get(0);
+        assertEquals("direct_internal", call.path("targetKind").asText());
+        assertEquals("transform", call.path("callee").path("name").asText());
+        assertTrue(call.path("customStorage").asBoolean());
+        assertEquals("ambiguous_prototype_or_storage",
+            call.path("mappingStatus").asText());
+        for (JsonNode argument : call.path("arguments")) {
+            assertFalse("custom-storage arguments must not be mapped to " +
+                "formals by position alone",
+                argument.has("candidateFormalIndex"));
+        }
+    }
+
+    @Test
     public void testIncompleteReturnScanNeverImpliesReturnIsAbsent() {
         assertEquals(
             "incomplete_callee_return_scan",
