@@ -37,9 +37,20 @@ int slice5a_caller(int seed) {
     return transformed + 1;
 }
 
+__attribute__((noinline, used))
+int slice5a_transform_two(int first, int second) {
+    return (first * 3) + second;
+}
+
+__attribute__((noinline, used))
+int slice5a_caller_two(int seed) {
+    volatile int adjusted = seed + 5;
+    return slice5a_transform_two(adjusted, adjusted + 9);
+}
+
 int main(int argc, char **argv) {
     (void)argv;
-    return slice5a_caller(argc);
+    return slice5a_caller(argc) + slice5a_caller_two(argc);
 }
 """
 
@@ -169,6 +180,45 @@ async def test_compiled_elf_direct_call_boundary(
     assert call.get("mappingStatus") != "runtime_verified", result
     if call["mappingStatus"] == "decompiler_positional_candidate":
         assert call["arguments"][0]["candidateFormalIndex"] == 0, result
+
+    # Intentional negative evidence check: the callee has two real source
+    # parameters but we request just one argument. The MCP output must report
+    # truncation, and must never emit a candidate argument-to-formal mapping.
+    second_target = await resolve_function_address(
+        mcp_stdio_client, program, "slice5a_transform_two"
+    )
+    second_cfg = await tool(
+        mcp_stdio_client, "get-function-cfg",
+        programPath=program, function="slice5a_caller_two", maxBlocks=64,
+    )
+    assert not second_cfg.get("truncated", False), second_cfg
+    second_sites = [
+        ref.get("fromInstruction")
+        for block in second_cfg.get("blocks", [])
+        for ref in block.get("calls", [])
+        if ref.get("to") and canonical_address(ref["to"]) ==
+        canonical_address(second_target)
+    ]
+    assert len(second_sites) == 1, second_cfg
+    short_report = await tool(
+        mcp_stdio_client, "inspect-call-boundary",
+        programPath=program, callsite=second_sites[0], maxArguments=1,
+    )
+    assert short_report.get("callOperationCount") == 1, short_report
+    short_call = short_report["calls"][0]
+    assert short_call.get("targetKind") == "direct_internal", short_report
+    assert short_call.get("callee", {}).get("name") == (
+        "slice5a_transform_two"
+    ), short_report
+    assert short_call.get("argumentCount", 0) >= 2, short_report
+    assert short_call.get("returnedArgumentCount") == 1, short_report
+    assert short_call.get("argumentsTruncated") is True, short_report
+    assert short_call.get("mappingStatus") != (
+        "decompiler_positional_candidate"
+    ), short_report
+    assert "candidateFormalIndex" not in short_call["arguments"][0], (
+        short_report
+    )
 
     digest_after = hashlib.sha256(binary.read_bytes()).hexdigest()
     assert digest_before == digest_after, "ELF input bytes were modified"
