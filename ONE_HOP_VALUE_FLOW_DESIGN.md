@@ -1,6 +1,6 @@
 # Slice 5B — One-Hop Call-Argument Value Flow
 
-**Status: IMPLEMENTED AND ISOLATED-VERIFIED ON FEDORA (2026-10-12); NOT FROZEN.** Native ELF tests accept proven candidate evidence or explicitly grounded prototype ambiguity; a real-ELF positive candidate still needs separate confirmation.
+**Status: DEVELOPMENT — full isolated regressions passed 2026-10-12; new positive real-ELF acceptance test committed but NOT YET RUN. NOT FROZEN.**
 **Base:** `feat/dataflow-reliability-foundation`, after its narrowly scoped
 engineering freeze. The existing frozen Slices 1–5A and bounded
 intraprocedural dataflow implementation must remain unchanged.
@@ -117,9 +117,29 @@ graphs; it does **not** necessarily show a positive two-sided native-ELF
 candidate. The synthetic Java Ghidra integration tests do require a
 positive candidate with an explicitly defined calling convention.
 
-**Freeze gate still open:** demonstrate positive, useful bounded one-hop
-evidence on at least one real imported binary with a grounded known
-callee signature, without weakening the unknown-convention guard.
+**Positive native-ELF acceptance gate — implemented, pending Fedora:**
+The updated two-case O0/O2 native regression starts with the original
+ambiguous-auto-analysis observations, then uses upstream ReVa's existing
+`set-function-prototype` tool to supply the original C source signature
+and, inside the disposable PyGhidra MCP project only, its script tool to
+bind Ghidra's imported compiler-spec default calling convention. This is
+an explicitly trusted fixture fact, not inferred by the one-hop tool.
+After that setup, the regression **requires** a complete
+`decompiler_positional_candidate`, distinct caller/callee SSA graphs,
+actual callee consumer operations, and independent first/second argument
+indices. Unknown-convention cases remain fail-closed. The binary's SHA
+is checked before/after, the ELF is never executed, and the normal
+Ghidra installation and Codex MCP service remain untouched.
+
+`REVA_VERIFY_ONE_HOP_NATIVE_ONLY=1` on
+`verify_static_analysis_expansion.sh` builds the exact extension in a
+disposable Ghidra copy and runs **only** the updated O0/O2 one-hop test.
+Use this targeted mode since the Java provider and prior complete suites
+were unchanged; it is **not** a substitute for the existing full workflow
+after production Java changes. The positive gate is **NOT YET PASSED**.
+If the new fixture setup does not produce positive evidence, diagnose
+the actual Ghidra result rather than modifying the candidate guard.
+
 Keep the development branch distinct from the normal ReVa/Ghidra
 installation.
 
