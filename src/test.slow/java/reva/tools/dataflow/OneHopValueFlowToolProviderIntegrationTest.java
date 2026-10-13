@@ -203,7 +203,7 @@ public class OneHopValueFlowToolProviderIntegrationTest
     }
 
     @Test
-    public void testSmallSliceBudgetCannotClaimCompleteTraversal() throws Exception {
+    public void testSmallSliceBudgetReportsObservedCoverage() throws Exception {
         String path = openFixture();
         JsonNode report = trace(path, CALLER + 4L, 0, 1);
         assertEquals("decompiler_positional_candidate",
