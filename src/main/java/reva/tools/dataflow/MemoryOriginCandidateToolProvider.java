@@ -171,10 +171,16 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                     AddressUtil.formatAddress(load.getInput(1).getAddress()));
                 PointerKey loadPointer = pointerKey(load.getInput(1));
                 result.put("loadPointerNormalization", loadPointer.kind);
+                result.put("loadPointerTerm", describePointer(loadPointer));
 
                 List<PcodeOpAST> found = new ArrayList<>();
                 int eligibleStores = 0;
                 int potentialCalls = 0;
+                int totalStores = 0;
+                int storesInLoadSpace = 0;
+                int sameOffsetDifferentRoot = 0;
+                Map<String, Integer> pointerKinds = new LinkedHashMap<>();
+                List<Map<String, Object>> observedStoreSample = new ArrayList<>();
                 int scanned = 0;
                 boolean scanTruncated = false;
                 var allOps = high.getPcodeOps();
@@ -194,11 +200,31 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                         op.getInput(1) == null || op.getInput(2) == null) {
                         continue;
                     }
+                    totalStores++;
                     if (op.getInput(0).getOffset() != load.getInput(0).getOffset()) {
                         continue;
                     }
+                    storesInLoadSpace++;
                     PointerKey storePointer = pointerKey(op.getInput(1));
-                    if (!samePointerTerm(loadPointer, storePointer)) {
+                    pointerKinds.merge(storePointer.kind(), 1, Integer::sum);
+                    boolean exactTerm = samePointerTerm(loadPointer, storePointer);
+                    if (!exactTerm && loadPointer.root() != null &&
+                        storePointer.root() != null &&
+                        loadPointer.offset() == storePointer.offset()) {
+                        sameOffsetDifferentRoot++;
+                    }
+                    if (observedStoreSample.size() < MAX_CANDIDATES) {
+                        Map<String, Object> sample = new LinkedHashMap<>();
+                        sample.put("storeAddress",
+                            AddressUtil.formatAddress(op.getSeqnum().getTarget()));
+                        sample.put("pointerTerm", describePointer(storePointer));
+                        sample.put("sameNormalizedSsaTerm", exactTerm);
+                        sample.put("relation", exactTerm
+                            ? "syntactic_same_ssa_term"
+                            : "distinct_or_unresolved_pointer_term");
+                        observedStoreSample.add(sample);
+                    }
+                    if (!exactTerm) {
                         continue;
                     }
                     eligibleStores++;
@@ -233,6 +259,18 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                 }
                 result.put("candidateStores", candidates);
                 result.put("matchingStoresObserved", eligibleStores);
+                result.put("totalStoreOperationsObserved", totalStores);
+                result.put("storesInLoadMemorySpace", storesInLoadSpace);
+                result.put("sameOffsetDifferentSsaRootStores",
+                    sameOffsetDifferentRoot);
+                result.put("storePointerNormalizationCounts", pointerKinds);
+                result.put("observedStoreSample", observedStoreSample);
+                result.put("observedStoreSampleOmitted",
+                    storesInLoadSpace - observedStoreSample.size());
+                result.put("storeSampleSemantics",
+                    "Diagnostic sample of STORE expressions in the same memory " +
+                    "space, NOT candidate reaching definitions; different SSA roots " +
+                    "and matching offsets do not prove aliasing.");
                 result.put("candidateStoresOmitted",
                     eligibleStores - candidates.size());
                 result.put("scannedOperations", scanned);
@@ -258,6 +296,24 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
             Map<String, Object> result, String status) {
         result.put("status", status);
         return createJsonResult(result);
+    }
+
+    private static Map<String, Object> describePointer(PointerKey pointer) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("normalization", pointer.kind());
+        value.put("constantOffset", pointer.offset());
+        if (pointer.root() == null) {
+            value.put("root", null);
+            return value;
+        }
+        value.put("root", AddressUtil.formatAddress(pointer.root().getAddress()));
+        value.put("rootSizeBytes", pointer.root().getSize());
+        value.put("rootHasDefinition", pointer.root().getDef() != null);
+        if (pointer.root().getDef() != null) {
+            value.put("rootDefinition",
+                pointer.root().getDef().getSeqnum().toString());
+        }
+        return value;
     }
 
     /** Same SSA base and same constant offset, never a general alias claim. */
