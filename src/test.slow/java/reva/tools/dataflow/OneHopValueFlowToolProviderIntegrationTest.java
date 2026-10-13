@@ -12,6 +12,7 @@ package reva.tools.dataflow;
 import static org.junit.Assert.*;
 
 import java.util.Map;
+import java.util.List;
 
 import org.junit.Test;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,6 +25,9 @@ import ghidra.program.model.lang.PrototypeModel;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.ParameterImpl;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.Varnode;
+import ghidra.program.model.pcode.VarnodeAST;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.task.TaskMonitor;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -211,11 +215,76 @@ public class OneHopValueFlowToolProviderIntegrationTest
         assertTrue(calleeSide.isObject());
         assertTrue(callerSide.path("operationCount").asInt() <= 1);
         assertTrue(calleeSide.path("operationCount").asInt() <= 1);
-        assertTrue("at least one side must report incomplete coverage",
-            callerSide.path("truncated").asBoolean() ||
-            calleeSide.path("truncated").asBoolean());
-        assertFalse("partial local evidence cannot become a complete one-hop",
+        // The tiny native fixture may legitimately require <=1 operation
+        // on BOTH sides. Never infer truncation from a small limit alone.
+        boolean callerComplete = callerSide.path("complete").asBoolean();
+        boolean calleeComplete = calleeSide.path("complete").asBoolean();
+        assertEquals("top-level coverage must reflect the two actual slices",
+            callerComplete && calleeComplete,
             report.path("complete").asBoolean());
+        for (JsonNode side : List.of(callerSide, calleeSide)) {
+            assertEquals("per-side complete and truncated are complements",
+                side.path("complete").asBoolean(),
+                !side.path("truncated").asBoolean());
+            if (side.path("truncated").asBoolean()) {
+                assertTrue(side.path("truncationReason").isTextual());
+            }
+        }
+    }
+
+    @Test
+    public void testActualOversizedSsaGraphCannotClaimOneHopComplete()
+            throws Exception {
+        // Deliberate two-operation def/use chain. Unlike the small native
+        // fixture, a one-operation budget MUST truncate the backward walk.
+        String path = openFixture();
+        assertNotNull(path);
+        Function caller = program.getFunctionManager()
+            .getFunctionAt(address(CALLER));
+        Function callee = program.getFunctionManager()
+            .getFunctionAt(address(CALLEE));
+        assertNotNull(caller);
+        assertNotNull(callee);
+
+        VarnodeAST root = new VarnodeAST(address(0x01007000L), 4, 1);
+        VarnodeAST middle = new VarnodeAST(address(0x01007010L), 4, 2);
+        VarnodeAST output = new VarnodeAST(address(0x01007020L), 4, 3);
+        PcodeOp first = new PcodeOp(address(0x010003a0L), 0, PcodeOp.INT_ADD,
+            new Varnode[] {root}, middle);
+        PcodeOp second = new PcodeOp(address(0x010003a1L), 1, PcodeOp.COPY,
+            new Varnode[] {middle}, output);
+        middle.setDef(first);
+        output.setDef(second);
+        root.addDescendant(first);
+        middle.addDescendant(second);
+
+        BoundedDataFlowSlice.Result bounded = BoundedDataFlowSlice.collect(
+            List.of(output), BoundedDataFlowSlice.Direction.BACKWARD, 1);
+        BoundedDataFlowSlice.Result unboundedEnough = BoundedDataFlowSlice.collect(
+            List.of(output), BoundedDataFlowSlice.Direction.BACKWARD, 4);
+        assertTrue("the graph really must exceed the one-operation budget",
+            bounded.truncated());
+        assertEquals("operation_budget", bounded.truncationReason());
+        assertEquals(1, bounded.operations().size());
+        assertFalse(unboundedEnough.truncated());
+        assertEquals(2, unboundedEnough.operations().size());
+
+        Map<String, Object> partial = OneHopValueFlowToolProvider.sliceEvidence(
+            caller, output, bounded);
+        Map<String, Object> complete = OneHopValueFlowToolProvider.sliceEvidence(
+            callee, output, unboundedEnough);
+        assertEquals(Boolean.FALSE, partial.get("complete"));
+        assertEquals(Boolean.TRUE, partial.get("truncated"));
+        assertEquals("operation_budget", partial.get("truncationReason"));
+        assertEquals(Boolean.TRUE, complete.get("complete"));
+        assertFalse("partial caller must invalidate the candidate's coverage",
+            OneHopValueFlowToolProvider.completeEvidence(partial, complete));
+        assertFalse("partial callee must invalidate the candidate's coverage",
+            OneHopValueFlowToolProvider.completeEvidence(complete, partial));
+        assertTrue("two truly complete sides may have complete coverage",
+            OneHopValueFlowToolProvider.completeEvidence(complete, complete));
+        assertFalse("missing evidence must never imply completeness",
+            OneHopValueFlowToolProvider.completeEvidence(null, complete));
     }
 
     @Test
