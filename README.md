@@ -16,6 +16,33 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 
 **Slice 4 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF. The automated gate also caught and corrected an invalid test assumption around unresolved callee purge: known zero-purge callees preserve a known post-call state, while unresolved purge/calling-convention facts may legitimately yield unknown state. No further Slice 4 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `STACK_EXECUTION_STATE_VALIDATION.md` for the frozen invariants and validation record.
 
+## Slice 5B — one-hop call-argument SSA evidence (development; unverified)
+
+The additive `trace-call-argument-one-hop` MCP tool is implemented in
+`OneHopValueFlowToolProvider.java`. It accepts a program, a real machine
+callsite, a zero-based argument index, and a bounded per-side P-code
+operation budget. It returns a bounded backward **caller** SSA graph and,
+only for a sufficiently well-defined direct internal call, a **separate**
+forward **callee-formal** SSA graph. Their positional relation is a
+**decompiler candidate**, never a proven runtime dataflow connection.
+
+The tool refuses to invent relations for indirect/external/thunk/recursive
+targets, variadic/custom-storage/unknown/hidden parameter prototypes,
+ambiguous parameter counts, missing SSA formals, or decompiler failures.
+Incomplete local graph coverage remains explicit and makes top-level
+`complete=false`.
+
+The `apply_one_hop_value_flow.py` installer updates only additive Slice
+5B-owned sources/tests plus guarded tool registration and MCP catalog
+entries in the existing checkout. Synthetic Ghidra integration regressions,
+compiled `-O0`/`-O2` native ELF acceptance cases, and installer safety
+tests have been committed and included in the isolated verifier. **These
+new tests have not yet run on Fedora.** No frozen Slice 1–5A providers or
+the frozen bounded-dataflow helper have been modified.
+
+See [ONE_HOP_VALUE_FLOW_DESIGN.md](ONE_HOP_VALUE_FLOW_DESIGN.md) for
+scope, candidate-only semantics, limitations and acceptance gates.
+
 ## Dataflow reliability prerequisite — frozen 2026-10-11
 
 The pinned upstream `DataFlowToolProvider` previously materialized entire
