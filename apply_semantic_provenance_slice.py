@@ -218,6 +218,13 @@ def main() -> int:
         print("error: Slice 3 bundle files are missing", file=sys.stderr)
         return 2
 
+    # Preflight registration before any possible metadata write.
+    manager_next = ensure_semantic_registration(manager_text)
+    transport_next = (
+        ensure_semantic_transport(transport_test.read_text())
+        if transport_test.exists() else None
+    )
+
     copy_slice_file(
         source_provider,
         repo
@@ -240,13 +247,6 @@ def main() -> int:
     )
     patch_incoming_reference_lines(
         repo / "src/main/java/reva/util/DecompilationContextUtil.java"
-    )
-
-    # Preflight registration before any possible metadata write.
-    manager_next = ensure_semantic_registration(manager_text)
-    transport_next = (
-        ensure_semantic_transport(transport_test.read_text())
-        if transport_test.exists() else None
     )
 
     if manager_next != manager_text:
