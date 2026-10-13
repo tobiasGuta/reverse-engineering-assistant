@@ -104,6 +104,43 @@ def patch_incoming_reference_lines(source_path: Path) -> None:
     print(f"edit  {source_path} (verified physical-line correction)")
 
 
+def patch_context_decompiler_options(source_path: Path) -> None:
+    """Align reference line/context decompilation with get-decompilation.
+
+    The pinned upstream context utility constructs two decompilers. Both
+    need eliminateUnreachable=false or their C line numbers can diverge.
+    """
+    original = source_path.read_text()
+    import_line = "import ghidra.app.decompiler.DecompInterface;\n"
+    options_import = "import ghidra.app.decompiler.DecompileOptions;\n"
+    marker = '        decompiler.setSimplificationStyle("decompile");\n'
+    configured = (
+        marker
+        + "\n"
+        + "        DecompileOptions options = new DecompileOptions();\n"
+        + "        options.setEliminateUnreachable(false);\n"
+        + "        decompiler.setOptions(options);\n"
+    )
+
+    if original.count(configured) == 2 and original.count(options_import) == 1:
+        print(f"keep  {source_path} (matching decompiler options)")
+        return
+
+    if (original.count(configured) != 0
+            or options_import in original
+            or original.count(marker) != 2
+            or original.count(import_line) != 1):
+        raise RuntimeError(
+            "Unexpected DecompilationContextUtil decompiler options; "
+            "refusing to overwrite"
+        )
+
+    updated = original.replace(import_line, import_line + options_import, 1)
+    updated = updated.replace(marker, configured)
+    source_path.write_text(updated)
+    print(f"edit  {source_path} (matching decompiler options)")
+
+
 def ensure_semantic_registration(manager_text: str) -> str:
     """Accept a fully registered Slice 3 in later-layered ReVa checkouts."""
     imported = "import reva.tools.provenance.SemanticProvenanceToolProvider;\n"
@@ -246,6 +283,9 @@ def main() -> int:
         args.refresh,
     )
     patch_incoming_reference_lines(
+        repo / "src/main/java/reva/util/DecompilationContextUtil.java"
+    )
+    patch_context_decompiler_options(
         repo / "src/main/java/reva/util/DecompilationContextUtil.java"
     )
 
