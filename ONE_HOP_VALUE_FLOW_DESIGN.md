@@ -1,6 +1,6 @@
 # Slice 5B — One-Hop Call-Argument Value Flow
 
-**Status: DESIGN; NO IMPLEMENTATION OR TEST CLAIM.**
+**Status: IMPLEMENTED IN DEVELOPMENT; NOT YET TESTED ON FEDORA OR FROZEN.**
 **Base:** `feat/dataflow-reliability-foundation`, after its narrowly scoped
 engineering freeze. The existing frozen Slices 1–5A and bounded
 intraprocedural dataflow implementation must remain unchanged.
@@ -74,18 +74,30 @@ associate memory aliases. Calls encountered during a local slice remain
 CALL/CALLIND boundaries. No target execution, Ghidra project mutation,
 debugger integration, shell access, or network actions.
 
-## Implementation approach (not yet started)
+## Implementation delivered (verification pending)
 
-1. New additive provider in the dataflow package can use the frozen
-   package-private `BoundedDataFlowSlice` helper without changing that
-   implementation.
-2. Register the new MCP tool through a guarded installer that patches
-   only `McpServerManager` and adds Slice 5B-owned code/tests.
-3. Require stable evidence keys: machine callsite, P-code sequence,
-   caller/callee entry addresses, zero-based index, and selected SSA
-   identities. Avoid variable-name-based joins.
-4. Build positive and negative synthetic Ghidra integration cases and
-   O0/O2 native ELF regression cases before a freeze decision.
+1. `OneHopValueFlowToolProvider.java` adds the new MCP command within
+   the dataflow package, calling the already frozen `BoundedDataFlowSlice`
+   helper without modifying its implementation.
+2. `apply_one_hop_value_flow.py` preflights and patches only
+   `McpServerManager.java` and the MCP tool-catalog test, and installs
+   the Slice 5B-owned provider and tests into the **existing** checkout.
+   It refuses unexpected conflicting content.
+3. Source evidence includes the actual machine callsite, Ghidra P-code
+   sequence, caller/callee addresses, argument index, and HighSymbol /
+   HighParam-backed callee formal identity. No variable-name matching
+   or cross-SSA synthetic edge is used.
+4. Added Java Ghidra tests for direct and indirect calls, variadic/custom
+   storage, bad inputs, and truncation propagation. Added compiled native
+   ELF `-O0`/`-O2` MCP tests for one- and two-argument direct calls.
+   Added offline installer regression tests.
+5. The isolated `verify_static_analysis_expansion.sh` workflow runs the
+   new Java and ELF regressions alongside frozen Slices 1–5A and the
+   bounded intraprocedural dataflow suite.
+
+**Verification: NOT RUN.** Code review and committed tests do not establish
+compilation or runtime correctness. Any errors must be resolved from the
+actual Fedora/Ghidra test output.
 
 ## Non-negotiable acceptance tests
 
@@ -106,7 +118,7 @@ debugger integration, shell access, or network actions.
 - No frozen source providers change and no existing stable MCP server
   configuration is modified.
 
-**Go/no-go:** implement only the above bounded evidence feature first;
+**Go/no-go:** accept only the above bounded evidence feature first;
 do not call it general interprocedural dataflow, and do not freeze unless
 real reverse-engineering use cases show actionable value over manually
 calling the existing tools.
