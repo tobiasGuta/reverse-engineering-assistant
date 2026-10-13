@@ -35,7 +35,7 @@ class OneHopApplyTests(unittest.TestCase):
                 "SemanticProvenanceToolProvider",
                 "StackExecutionStateToolProvider",
                 "import reva.tools.callboundary.CallBoundaryToolProvider;",
-                "new CallBoundaryToolProvider(server));",
+                "                    new CallBoundaryToolProvider(server));",
             )) + "\n"
         )
         self.transport.write_text('    "inspect-call-boundary",\n')
