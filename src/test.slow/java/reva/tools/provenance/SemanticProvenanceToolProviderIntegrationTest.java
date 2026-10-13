@@ -439,6 +439,48 @@ public class SemanticProvenanceToolProviderIntegrationTest
 
 
     @Test
+    public void testIncomingReferenceLineUsesCallerRenderedDecompilation()
+            throws Exception {
+        String path = createSemanticFixture();
+        int expected = findDecompilationLineContaining(path, "transform");
+
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+            CallToolResult result =
+                client.callTool(new CallToolRequest(
+                    "get-decompilation",
+                    Map.of(
+                        "programPath", path,
+                        "functionNameOrAddress", "transform",
+                        "includeIncomingReferences", true,
+                        "includeReferenceContext", true,
+                        "limit", 20)));
+            assertMcpResultNotError(result, "incoming reference context");
+
+            JsonNode json = parseJsonContent(
+                ((TextContent) result.content().get(0)).text());
+            JsonNode references = json.path("incomingReferences");
+            assertTrue("expected incoming callsite reference",
+                references.isArray() && references.size() > 0);
+
+            boolean found = false;
+            for (JsonNode reference : references) {
+                if (!"main".equals(reference.path("fromFunction").asText())) {
+                    continue;
+                }
+                assertEquals(
+                    "incoming reference must use physical get-decompilation line",
+                    expected, reference.path("fromLine").asInt(-1));
+                assertTrue(
+                    "caller context must contain the call, not an unrelated brace",
+                    reference.path("context").asText().contains("transform"));
+                found = true;
+            }
+            assertTrue("incoming reference from main was missing", found);
+        });
+    }
+
+    @Test
     public void testLongRenderedFunctionMapsPhysicalLinesNotClangOrdinals() {
         // Simulates a long, optimized decompilation where a multiline token
         // creates 299 additional physical lines before a call. Duplicate
