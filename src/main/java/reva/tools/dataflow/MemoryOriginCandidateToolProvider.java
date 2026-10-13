@@ -117,6 +117,8 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
             result.put("machineInstruction", machine.toString());
             result.put("semantics", SEMANTICS);
             result.put("candidateStores", List.of());
+            result.put("sameBaseDifferentOffsetStores", List.of());
+            result.put("sameBaseDifferentOffsetStoreCount", 0);
             result.put("maxScannedOperations", scanBudget);
             result.put("maxSliceOperations", sliceBudget);
             result.put("maxReportedOperations", reported);
@@ -237,7 +239,7 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                             related.put("storedWidthBytes", op.getInput(2).getSize());
                             related.put("relation",
                                 "same_ssa_base_distinct_static_offset");
-                            related.put("sameMemoryAddress", false);
+                            related.put("sameStaticAddressExpression", false);
                             related.put("reachingDefinition", "unproven");
                             sameBaseDifferentOffsetStores.add(related);
                         }
