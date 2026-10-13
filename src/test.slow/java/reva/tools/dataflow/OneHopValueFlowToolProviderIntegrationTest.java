@@ -249,7 +249,7 @@ public class OneHopValueFlowToolProviderIntegrationTest
         VarnodeAST root = new VarnodeAST(address(0x01007000L), 4, 1);
         VarnodeAST middle = new VarnodeAST(address(0x01007010L), 4, 2);
         VarnodeAST output = new VarnodeAST(address(0x01007020L), 4, 3);
-        PcodeOp first = new PcodeOp(address(0x010003a0L), 0, PcodeOp.INT_ADD,
+        PcodeOp first = new PcodeOp(address(0x010003a0L), 0, PcodeOp.COPY,
             new Varnode[] {root}, middle);
         PcodeOp second = new PcodeOp(address(0x010003a1L), 1, PcodeOp.COPY,
             new Varnode[] {middle}, output);
