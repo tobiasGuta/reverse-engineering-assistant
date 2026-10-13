@@ -148,7 +148,7 @@ public class MemoryOriginCandidateToolProviderIntegrationTest
                 relatedFound = true;
                 assertEquals("same_ssa_base_distinct_static_offset",
                     related.path("relation").asText());
-                assertFalse(related.path("sameMemoryAddress").asBoolean());
+                assertFalse(related.path("sameStaticAddressExpression").asBoolean());
                 assertEquals("unproven",
                     related.path("reachingDefinition").asText());
                 assertEquals(8,
