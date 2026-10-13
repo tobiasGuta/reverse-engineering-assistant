@@ -168,6 +168,114 @@ public class OneHopValueFlowToolProviderIntegrationTest
         assertTrue(report.path("complete").asBoolean());
     }
 
+
+    @Test
+    public void testObservedMergeHotspotsAndCompactSerialization() throws Exception {
+        String path = openFixture();
+        assertNotNull(path);
+        Function caller = program.getFunctionManager()
+            .getFunctionAt(address(CALLER));
+
+        VarnodeAST seed = new VarnodeAST(address(0x01005000L), 4, 1);
+        // Deliberately register descendants in descending order: summaries
+        // must depend on observed P-code and fan-in, not insertion order.
+        for (int i = 9; i >= 0; i--) {
+            int fanIn = i + 2;
+            Varnode[] inputs = new Varnode[fanIn];
+            java.util.Arrays.fill(inputs, seed);
+            VarnodeAST output = new VarnodeAST(
+                address(0x01005100L + i * 8L), 4, i + 2);
+            PcodeOp merge = new PcodeOp(address(0x01000380L + i),
+                i + 1, PcodeOp.MULTIEQUAL, inputs, output);
+            seed.addDescendant(merge);
+        }
+
+        BoundedDataFlowSlice.Result observed = BoundedDataFlowSlice.collect(
+            List.of(seed), BoundedDataFlowSlice.Direction.FORWARD, 32);
+        assertFalse(observed.truncated());
+        assertEquals(10, observed.operations().size());
+
+        Map<String, Object> compact = OneHopValueFlowToolProvider.sliceEvidence(
+            caller, seed, observed, 2);
+        assertEquals(10, compact.get("operationCount"));
+        assertEquals(2, compact.get("reportedOperationCount"));
+        assertEquals(8, compact.get("operationsOmitted"));
+        assertEquals(Boolean.TRUE, compact.get("serializationLimited"));
+        assertEquals(Boolean.FALSE, compact.get("complete"));
+        assertEquals(Boolean.TRUE, compact.get("truncated"));
+        assertEquals("serialized_operation_budget", compact.get("truncationReason"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary =
+            (Map<String, Object>) compact.get("operationSummary");
+        assertEquals("observed_slice_operations_only", summary.get("scope"));
+        assertEquals(Boolean.FALSE, summary.get("traversalTruncated"));
+        assertEquals(10, summary.get("observedOperationCount"));
+        assertEquals(10, summary.get("observedMergeCount"));
+        assertEquals(2, summary.get("mergeHotspotsOmitted"));
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> opcodeCounts =
+            (Map<String, Integer>) summary.get("observedOpcodeCounts");
+        assertEquals(Integer.valueOf(10), opcodeCounts.get("MULTIEQUAL"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hotspots =
+            (List<Map<String, Object>>) summary.get("mergeHotspots");
+        assertEquals(8, hotspots.size());
+        assertEquals(11, hotspots.get(0).get("inputCount"));
+        assertEquals(3, hotspots.get(0).get("inputDefinitionsOmitted"));
+        assertEquals(10, hotspots.get(1).get("inputCount"));
+        assertTrue(hotspots.get(0).containsKey("sequence"));
+        assertTrue(hotspots.get(0).containsKey("address"));
+
+        Map<String, Object> full = OneHopValueFlowToolProvider.sliceEvidence(
+            caller, seed, observed);
+        assertEquals(10, full.get("reportedOperationCount"));
+        assertEquals(0, full.get("operationsOmitted"));
+        assertEquals(Boolean.FALSE, full.get("serializationLimited"));
+        assertEquals(Boolean.TRUE, full.get("complete"));
+
+        Map<String, Object> summaryOnly = OneHopValueFlowToolProvider.sliceEvidence(
+            caller, seed, observed, 0);
+        assertEquals(0, summaryOnly.get("reportedOperationCount"));
+        assertEquals(10, summaryOnly.get("operationsOmitted"));
+        assertEquals(Boolean.FALSE, summaryOnly.get("complete"));
+        assertEquals(summary, summaryOnly.get("operationSummary"));
+    }
+
+    @Test
+    public void testTraversalTruncationPreservedWithCompactEvidence()
+            throws Exception {
+        String path = openFixture();
+        assertNotNull(path);
+        Function caller = program.getFunctionManager()
+            .getFunctionAt(address(CALLER));
+        VarnodeAST seed = new VarnodeAST(address(0x01005200L), 4, 42);
+        for (int i = 0; i < 5; i++) {
+            VarnodeAST output = new VarnodeAST(
+                address(0x01005300L + i * 8L), 4, i + 43);
+            PcodeOp op = new PcodeOp(address(0x01000400L + i),
+                i + 1, PcodeOp.COPY, new Varnode[] { seed }, output);
+            seed.addDescendant(op);
+        }
+        BoundedDataFlowSlice.Result partial = BoundedDataFlowSlice.collect(
+            List.of(seed), BoundedDataFlowSlice.Direction.FORWARD, 3);
+        assertTrue(partial.truncated());
+        assertEquals("operation_budget", partial.truncationReason());
+        Map<String, Object> compact = OneHopValueFlowToolProvider.sliceEvidence(
+            caller, seed, partial, 1);
+        assertEquals(Boolean.FALSE, compact.get("complete"));
+        assertEquals(Boolean.TRUE, compact.get("truncated"));
+        assertEquals("operation_budget", compact.get("truncationReason"));
+        assertEquals(2, compact.get("operationsOmitted"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary =
+            (Map<String, Object>) compact.get("operationSummary");
+        assertEquals(Boolean.TRUE, summary.get("traversalTruncated"));
+        assertEquals(3, summary.get("observedOperationCount"));
+        assertEquals(0, summary.get("observedMergeCount"));
+        assertFalse(OneHopValueFlowToolProvider.completeEvidence(compact, compact));
+    }
+
     @Test
     public void testIndirectCallHasNoCalleeJoin() throws Exception {
         String path = openFixture();
