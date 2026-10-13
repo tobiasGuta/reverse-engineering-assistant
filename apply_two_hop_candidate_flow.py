@@ -16,6 +16,7 @@ import sys
 OWNED = (
     Path("src/main/java/reva/tools/dataflow/TwoHopValueFlowToolProvider.java"),
     Path("src/test.slow/java/reva/tools/dataflow/TwoHopValueFlowToolProviderIntegrationTest.java"),
+    Path("tests/test_two_hop_value_flow_real_binary.py"),
 )
 
 MANAGER = Path("src/main/java/reva/server/McpServerManager.java")
@@ -128,7 +129,7 @@ def main() -> int:
     p.add_argument("repo", nargs="?",
         default="/mnt/Development/Tools/ReVa-Static-Analysis")
     p.add_argument("--refresh", action="store_true",
-        help="Refresh only two-hop-owned provider and integration tests")
+        help="Refresh only two-hop-owned provider and tests")
     args = p.parse_args()
     apply(Path(args.repo).resolve(),
           Path(__file__).resolve().parent, args.refresh)
