@@ -37,6 +37,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
+import reva.util.AddressUtil;
 
 /** Read-only two-hop MCP regressions with known x86-64 direct-call fixture. */
 public class TwoHopValueFlowToolProviderIntegrationTest
@@ -146,7 +147,7 @@ public class TwoHopValueFlowToolProviderIntegrationTest
                     candidate.path("boundaryStatus").asText()) &&
                 "chainC".equals(candidate.path("callee").path("name").asText())) {
                 found = true;
-                assertEquals(addr(B_CALL).toString(),
+                assertEquals(AddressUtil.formatAddress(addr(B_CALL)),
                     candidate.path("callsite").asText());
                 assertEquals(0,candidate.path("argumentIndex").asInt());
                 assertEquals("observed_ssa_dependency_candidate",
@@ -160,13 +161,13 @@ public class TwoHopValueFlowToolProviderIntegrationTest
     }
 
     @Test
-    public void testUnknownSecondPrototypeCannotProduceCandidate()
+    public void testVariadicSecondPrototypeCannotProduceCandidate()
             throws Exception {
         String path = openChain();
-        int tx = program.startTransaction("unknown C convention test");
+        int tx = program.startTransaction("variadic C prototype test");
         try {
             program.getFunctionManager().getFunctionAt(addr(C))
-                .setCallingConvention("unknown");
+                .setVarArgs(true);
         }
         finally {
             program.endTransaction(tx, true);
