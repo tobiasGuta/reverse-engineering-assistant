@@ -212,8 +212,14 @@ public class TwoHopValueFlowToolProviderIntegrationTest
         JsonNode result = trace(path, 64, 12);
         assertEquals("decompiler_positional_candidate",
             result.path("firstBoundaryStatus").asText());
-        for (JsonNode candidate : result.path("candidateSecondHops")) {
-            assertNotEquals("decompiler_positional_candidate",
+        JsonNode candidates = result.path("candidateSecondHops");
+        assertTrue("variadic second-boundary refusal must NOT pass " +
+            "vacuously without an observed forwarded CALL; summary=" +
+            result.path("intermediateFormalEvidence")
+                .path("operationSummary").toString(),
+            candidates.size() > 0);
+        for (JsonNode candidate : candidates) {
+            assertEquals("ambiguous_second_prototype_or_storage",
                 candidate.path("boundaryStatus").asText());
             assertFalse(candidate.path("complete").asBoolean());
             assertTrue(candidate.path("calleeFormalEvidence").isMissingNode());
