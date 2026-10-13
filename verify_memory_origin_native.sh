@@ -48,7 +48,7 @@ with ZipFile(archive) as outer:
     with ZipFile(BytesIO(outer.read(jars[0]))) as jar:
         cls = jar.read(
             "reva/tools/dataflow/MemoryOriginCandidateToolProvider.class")
-if b"trace-call-argument-memory-origin" not in cls:
+if b"trace-memory-load-origins" not in cls:
     raise SystemExit("ERROR: current memory-origin provider missing from archive")
 print(archive)
 PY
