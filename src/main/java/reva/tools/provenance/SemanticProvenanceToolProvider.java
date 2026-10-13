@@ -191,17 +191,15 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                 int matchedCount = 0;
 
                 for (ClangLine line : lines) {
-                    int currentDisplayLine =
-                        displayLineNumber(line, displayLines);
-                    if (displayLine != null &&
-                        currentDisplayLine != displayLine.intValue()) {
-                        continue;
-                    }
-
                     List<ClangToken> lineTokens = line.getAllTokens();
                     for (int tokenIndex = 0;
                             tokenIndex < lineTokens.size(); tokenIndex++) {
                         ClangToken token = lineTokens.get(tokenIndex);
+                        if (displayLine != null &&
+                            !displayLine.equals(tokenDisplayLineNumber(
+                                line, tokenIndex, displayLines))) {
+                            continue;
+                        }
 
                         if (tokenText != null) {
                             String text = token.getText();
@@ -232,8 +230,11 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                     AddressUtil.formatAddress(function.getEntryPoint()));
                 result.put("provenanceSemantics", PROVENANCE_SEMANTICS);
                 result.put("displayLineNumbering",
-                    "1-based line number matched against the actual DecompiledFunction.getC() " +
-                    "rendering used by ReVa get-decompilation; no fixed Clang-line offset is assumed.");
+                    "1-based physical line number in DecompiledFunction.getC(), as used by " +
+                    "ReVa get-decompilation. Derived from ordered Clang output and embedded " +
+                    "line breaks; null if the rendered line count cannot be validated.");
+                result.put("displayLineMappingComplete",
+                    displayLines.size() == lines.size());
 
                 Map<String, Object> selectors = new LinkedHashMap<>();
                 selectors.put("address", addressText);
@@ -392,8 +393,11 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
                 result.put("flowType", instruction.getFlowType().toString());
                 result.put("provenanceSemantics", PROVENANCE_SEMANTICS);
                 result.put("displayLineNumbering",
-                    "1-based line number matched against the actual DecompiledFunction.getC() " +
-                    "rendering used by ReVa get-decompilation; no fixed Clang-line offset is assumed.");
+                    "1-based physical line number in DecompiledFunction.getC(), as used by " +
+                    "ReVa get-decompilation. Derived from ordered Clang output and embedded " +
+                    "line breaks; null if the rendered line count cannot be validated.");
+                result.put("displayLineMappingComplete",
+                    displayLines.size() == lines.size());
                 result.put("argumentSemantics",
                     "Arguments are High P-code CALL/CALLIND inputs after input 0 " +
                     "(the call target). relatedDecompilerTokens are direct Varnode " +
@@ -657,7 +661,13 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
             ClangLine line =
                 context != null ? context.line() : token.getLineParent();
             if (line != null) {
-                lines.add(displayLineNumber(line, displayLines));
+                int tokenIndex = context != null
+                    ? context.tokenIndex() : line.indexOfToken(token);
+                Integer number = tokenDisplayLineNumber(
+                    line, tokenIndex, displayLines);
+                if (number != null) {
+                    lines.add(number);
+                }
             }
         }
 
@@ -694,7 +704,7 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
         if (line != null) {
             info.put("clangLineNumber", line.getLineNumber());
             info.put("displayLineNumber",
-                displayLineNumber(line, displayLines));
+                tokenDisplayLineNumber(line, lineTokenIndex, displayLines));
             info.put("lineTokenIndex", lineTokenIndex);
             info.put("lineText", renderLine(line));
         }
@@ -939,70 +949,75 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
         return text.toString();
     }
 
-    private static int displayLineNumber(
-            ClangLine line, Map<ClangLine, Integer> displayLines) {
-        Integer mapped = displayLines.get(line);
-        return mapped != null ? mapped : line.getLineNumber();
+    /**
+     * A ClangLine is one pretty-printer emission, not necessarily one physical
+     * line in getC(): token text (notably comments) may contain embedded newlines.
+     * Never substitute getLineNumber() when the rendered mapping is unavailable.
+     */
+    private static Integer tokenDisplayLineNumber(
+            ClangLine line, int tokenIndex,
+            Map<ClangLine, Integer> displayLines) {
+        Integer start = displayLines.get(line);
+        if (start == null || tokenIndex < 0 ||
+            tokenIndex >= line.getNumTokens()) {
+            return null;
+        }
+        int physicalLine = start;
+        for (int i = 0; i < tokenIndex; i++) {
+            physicalLine += countLineFeeds(line.getToken(i).getText());
+        }
+        return physicalLine;
+    }
+
+    private static int countLineFeeds(String text) {
+        if (text == null) {
+            return 0;
+        }
+        int result = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                result++;
+            }
+        }
+        return result;
     }
 
     private static Map<ClangLine, Integer> buildDisplayLineMap(
             DecompileResults results, List<ClangLine> clangLines) {
-        Map<ClangLine, Integer> mapping =
-            new IdentityHashMap<>();
+        if (results == null || results.getDecompiledFunction() == null) {
+            return new IdentityHashMap<>();
+        }
+        return buildDisplayLineMap(results.getDecompiledFunction().getC(),
+            clangLines);
+    }
 
-        if (results == null ||
-            results.getDecompiledFunction() == null) {
-            for (ClangLine line : clangLines) {
-                mapping.put(line, line.getLineNumber());
-            }
+    // Package-visible for regression coverage of long/multiline functions.
+    static Map<ClangLine, Integer> buildDisplayLineMap(
+            String renderedC, List<ClangLine> clangLines) {
+        Map<ClangLine, Integer> mapping = new IdentityHashMap<>();
+        if (renderedC == null) {
             return mapping;
         }
 
-        String decompilation =
-            results.getDecompiledFunction().getC();
-        if (decompilation == null) {
-            decompilation = "";
+        // Ghidra PrettyPrinter emits every ClangLine in order, appending a
+        // platform line separator after each. Token text itself may contain
+        // newline characters. Tracking emission position avoids greedy string
+        // matching (which can jump across repeated braces) and incorrect
+        // fallback to a raw Clang line number.
+        int renderedLine = 1;
+        for (ClangLine line : clangLines) {
+            mapping.put(line, renderedLine);
+            renderedLine += countLineFeeds(renderLine(line)) + 1;
         }
 
-        String[] renderedLines =
-            decompilation.split("\\R", -1);
-        int searchFrom = 0;
-
-        for (ClangLine clangLine : clangLines) {
-            String expected = renderLine(clangLine);
-            int matchedIndex =
-                findRenderedLine(
-                    renderedLines, expected, searchFrom);
-
-            if (matchedIndex < 0) {
-                mapping.put(
-                    clangLine, clangLine.getLineNumber());
-                continue;
-            }
-
-            mapping.put(clangLine, matchedIndex + 1);
-            searchFrom = matchedIndex + 1;
+        // get-decompilation splits getC() on LF. If even the total physical
+        // line count diverges, suppress display locations instead of
+        // supplying plausible but wrong numbers. Address/P-code evidence
+        // remains independently available.
+        if (renderedLine - 1 != countLineFeeds(renderedC)) {
+            mapping.clear();
         }
-
         return mapping;
-    }
-
-    private static int findRenderedLine(
-            String[] renderedLines, String expected, int searchFrom) {
-        for (int i = searchFrom; i < renderedLines.length; i++) {
-            if (renderedLines[i].equals(expected)) {
-                return i;
-            }
-        }
-
-        String normalizedExpected = expected.strip();
-        for (int i = searchFrom; i < renderedLines.length; i++) {
-            if (renderedLines[i].strip().equals(normalizedExpected)) {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
     private DecompInterface createConfiguredDecompiler(
