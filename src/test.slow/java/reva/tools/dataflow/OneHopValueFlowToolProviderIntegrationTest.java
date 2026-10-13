@@ -169,6 +169,48 @@ public class OneHopValueFlowToolProviderIntegrationTest
     }
 
 
+
+    @Test
+    public void testMcpAcceptsOptionalCompactReportingLimit() throws Exception {
+        String path = openFixture();
+        JsonNode report = withMcpClient(createMcpTransport(),
+            (McpClientFunction<JsonNode>) client -> {
+                client.initialize();
+                CallToolResult response = client.callTool(
+                    new CallToolRequest("trace-call-argument-one-hop",
+                        Map.of("programPath", path,
+                            "callsite", address(CALLER + 4L).toString(),
+                            "argumentIndex", 0,
+                            "maxOperations", 16,
+                            "maxReportedOperations", 0)));
+                assertMcpResultNotError(response, "trace-call-argument-one-hop");
+                return parseJsonContent(
+                    ((TextContent) response.content().get(0)).text());
+            });
+        assertEquals("decompiler_positional_candidate",
+            report.path("relationStatus").asText());
+        assertEquals(0, report.path("maxReportedOperationsPerSide").asInt());
+        for (JsonNode evidence : List.of(
+                report.path("callerEvidence"), report.path("calleeEvidence"))) {
+            assertTrue(evidence.isObject());
+            assertEquals(0, evidence.path("reportedOperationCount").asInt());
+            assertEquals(0, evidence.path("operations").size());
+            assertEquals(evidence.path("operationCount").asInt(),
+                evidence.path("operationsOmitted").asInt());
+            assertEquals(evidence.path("operationCount").asInt(),
+                evidence.path("operationSummary")
+                    .path("observedOperationCount").asInt());
+            if (evidence.path("operationCount").asInt() > 0) {
+                assertFalse(evidence.path("complete").asBoolean());
+                assertTrue(evidence.path("serializationLimited").asBoolean());
+            }
+        }
+        assertEquals(
+            report.path("callerEvidence").path("complete").asBoolean() &&
+                report.path("calleeEvidence").path("complete").asBoolean(),
+            report.path("complete").asBoolean());
+    }
+
     @Test
     public void testObservedMergeHotspotsAndCompactSerialization() throws Exception {
         String path = openFixture();
