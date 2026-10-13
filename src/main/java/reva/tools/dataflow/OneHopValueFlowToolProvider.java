@@ -10,9 +10,11 @@
 package reva.tools.dataflow;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import ghidra.app.decompiler.DecompInterface;
@@ -46,6 +48,8 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
     private static final int HARD_MAX_OPS = 500;
     private static final int MAX_CALL_ARGS = 128;
     private static final int MAX_SERIALIZED_INPUTS_PER_OP = 32;
+    private static final int MAX_MERGE_HOTSPOTS = 8;
+    private static final int MAX_MERGE_INPUT_DEFS = 8;
     private static final int DECOMPILE_TIMEOUT_SECONDS = 30;
     private static final String SEMANTICS =
         "Separate caller backward and callee forward Ghidra High P-code " +
@@ -69,6 +73,12 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         properties.put("maxOperations",
             SchemaUtil.integerPropertyWithDefault(
                 "Max P-code operations PER side, 1..500", DEFAULT_MAX_OPS));
+        properties.put("maxReportedOperations",
+            SchemaUtil.integerProperty(
+                "Optional 0..maxOperations cap on operation records PER side. " +
+                "Default returns all observed operations; lower values add a " +
+                "bounded opcode/merge summary and explicitly mark serialized " +
+                "coverage incomplete. Does not increase traversal limits."));
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("trace-call-argument-one-hop")
@@ -104,6 +114,12 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
             if (maxOps < 1 || maxOps > HARD_MAX_OPS) {
                 return createErrorResult("maxOperations must be in [1,500]");
             }
+            int maxReportedOps = getOptionalInt(
+                request, "maxReportedOperations", maxOps);
+            if (maxReportedOps < 0 || maxReportedOps > maxOps) {
+                return createErrorResult(
+                    "maxReportedOperations must be in [0,maxOperations]");
+            }
 
             followRead(program, callsite);
             Map<String, Object> result = new LinkedHashMap<>();
@@ -114,6 +130,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
             result.put("caller", identity(caller));
             result.put("argumentIndex", argIndex);
             result.put("maxOperationsPerSide", maxOps);
+            result.put("maxReportedOperationsPerSide", maxReportedOps);
             result.put("relationSemantics", SEMANTICS);
             result.put("callerEvidence", null);
             result.put("calleeEvidence", null);
@@ -177,7 +194,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 BoundedDataFlowSlice.Result callerSlice = BoundedDataFlowSlice.collect(
                     List.of(argument), BoundedDataFlowSlice.Direction.BACKWARD, maxOps);
                 Map<String, Object> callerEvidence =
-                    sliceEvidence(caller, argument, callerSlice);
+                    sliceEvidence(caller, argument, callerSlice, maxReportedOps);
                 result.put("callerEvidence", callerEvidence);
 
                 if (call.getOpcode() == PcodeOp.CALLIND) {
@@ -297,7 +314,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 formalEvidence.put("ssaInstanceCount", seeds.size());
                 result.put("calleeFormal", formalEvidence);
                 Map<String, Object> calleeEvidence =
-                    sliceEvidence(callee, seeds.get(0), calleeSlice);
+                    sliceEvidence(callee, seeds.get(0), calleeSlice, maxReportedOps);
                 List<Map<String, Object>> seedNodes = new ArrayList<>();
                 for (Varnode node : seeds) {
                     seedNodes.add(describeNode(node));
@@ -377,9 +394,79 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         return item;
     }
 
+
+    /**
+     * A compact index over the operations actually observed by the bounded
+     * slice, never a statement about unexplored predecessors or successors.
+     * Rank high-fan-in MULTIEQUAL merge points deterministically so an analyst
+     * can request more evidence at their exact P-code sequence/address.
+     */
+    static Map<String, Object> operationSummary(
+            BoundedDataFlowSlice.Result slice) {
+        Map<String, Integer> counts = new TreeMap<>();
+        List<PcodeOp> merges = new ArrayList<>();
+        for (PcodeOp op : slice.operations()) {
+            counts.merge(op.getMnemonic(), 1, Integer::sum);
+            if (op.getOpcode() == PcodeOp.MULTIEQUAL) {
+                merges.add(op);
+            }
+        }
+        merges.sort(Comparator.comparingInt(PcodeOp::getNumInputs)
+            .reversed().thenComparing(PcodeOp::getSeqnum));
+
+        List<Map<String, Object>> hotspots = new ArrayList<>();
+        for (int i = 0; i < Math.min(merges.size(), MAX_MERGE_HOTSPOTS); i++) {
+            PcodeOp op = merges.get(i);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("sequence", op.getSeqnum().toString());
+            item.put("address",
+                AddressUtil.formatAddress(op.getSeqnum().getTarget()));
+            item.put("inputCount", op.getNumInputs());
+            item.put("output", op.getOutput() == null
+                ? null : describeNode(op.getOutput()));
+            List<Map<String, Object>> inputDefinitions = new ArrayList<>();
+            for (int j = 0; j < Math.min(op.getNumInputs(),
+                    MAX_MERGE_INPUT_DEFS); j++) {
+                Varnode node = op.getInput(j);
+                PcodeOp def = node == null ? null : node.getDef();
+                Map<String, Object> input = new LinkedHashMap<>();
+                input.put("index", j);
+                input.put("definingOperation", def == null
+                    ? null : def.getSeqnum().toString());
+                inputDefinitions.add(input);
+            }
+            item.put("inputDefinitions", inputDefinitions);
+            item.put("inputDefinitionsOmitted",
+                op.getNumInputs() - inputDefinitions.size());
+            hotspots.add(item);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("scope", "observed_slice_operations_only");
+        result.put("traversalTruncated", slice.truncated());
+        result.put("observedOperationCount", slice.operations().size());
+        result.put("observedOpcodeCounts", counts);
+        result.put("observedMergeCount", merges.size());
+        result.put("mergeHotspots", hotspots);
+        result.put("mergeHotspotsOmitted", merges.size() - hotspots.size());
+        return result;
+    }
+
     static Map<String, Object> sliceEvidence(
             Function function, Varnode seed,
             BoundedDataFlowSlice.Result slice) {
+        // Preserve the frozen Slice 5B result contract for existing callers.
+        return sliceEvidence(function, seed, slice, HARD_MAX_OPS);
+    }
+
+    static Map<String, Object> sliceEvidence(
+            Function function, Varnode seed,
+            BoundedDataFlowSlice.Result slice, int maxReportedOperations) {
+        if (maxReportedOperations < 0 ||
+            maxReportedOperations > HARD_MAX_OPS) {
+            throw new IllegalArgumentException(
+                "maxReportedOperations must be in [0,500]");
+        }
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("function", identity(function));
         evidence.put("seed", describeNode(seed));
@@ -391,9 +478,13 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         evidence.put("visitedVarnodes", slice.visitedVarnodes());
         evidence.put("scannedEdges", slice.scannedEdges());
         evidence.put("operationCount", slice.operations().size());
+        evidence.put("operationSummary", operationSummary(slice));
         List<Map<String, Object>> operations = new ArrayList<>();
         boolean operandsTruncated = false;
         for (PcodeOp op : slice.operations()) {
+            if (operations.size() >= maxReportedOperations) {
+                break;
+            }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("sequence", op.getSeqnum().toString());
             item.put("address",
@@ -415,7 +506,19 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
             operations.add(item);
         }
         evidence.put("operations", operations);
+        evidence.put("reportedOperationCount", operations.size());
+        int operationsOmitted = slice.operations().size() - operations.size();
+        evidence.put("operationsOmitted", operationsOmitted);
+        evidence.put("serializationLimited", operationsOmitted > 0 ||
+            operandsTruncated);
         evidence.put("operandsTruncated", operandsTruncated);
+        if (operationsOmitted > 0) {
+            evidence.put("complete", false);
+            evidence.put("truncated", true);
+            if (!slice.truncated()) {
+                evidence.put("truncationReason", "serialized_operation_budget");
+            }
+        }
         if (operandsTruncated) {
             evidence.put("complete", false);
             evidence.put("truncated", true);
