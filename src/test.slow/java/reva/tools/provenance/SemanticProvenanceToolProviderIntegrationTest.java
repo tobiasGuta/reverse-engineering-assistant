@@ -11,6 +11,8 @@ package reva.tools.provenance;
 
 import static org.junit.Assert.*;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.Test;
@@ -18,6 +20,8 @@ import org.junit.Test;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.decompiler.ClangLine;
+import ghidra.app.decompiler.ClangToken;
 import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
@@ -431,6 +435,80 @@ public class SemanticProvenanceToolProviderIntegrationTest
                 result.toString().contains(
                     "At least one selector is required"));
         });
+    }
+
+
+    @Test
+    public void testLongRenderedFunctionMapsPhysicalLinesNotClangOrdinals() {
+        // Simulates a long, optimized decompilation where a multiline token
+        // creates 299 additional physical lines before a call. Duplicate
+        // braces intentionally defeat greedy first-matching line algorithms.
+        List<ClangLine> lines = new ArrayList<>();
+        StringBuilder rendered = new StringBuilder();
+        ClangToken callToken = null;
+        for (int ordinal = 1; ordinal <= 584; ordinal++) {
+            ClangLine line = new ClangLine(ordinal, 0);
+            String value;
+            if (ordinal == 10) {
+                value = "/*" + "\n".repeat(299) + "*/";
+            }
+            else if (ordinal == 584) {
+                value = "rpl_mbrtoc32(&value);";
+            }
+            else {
+                value = ordinal % 2 == 0 ? "}" : "{";
+            }
+            ClangToken token = new ClangToken(null, value);
+            line.addToken(token);
+            lines.add(line);
+            rendered.append(value).append('\n');
+            if (ordinal == 584) {
+                callToken = token;
+            }
+        }
+
+        Map<ClangLine, Integer> map =
+            SemanticProvenanceToolProvider.buildDisplayLineMap(
+                rendered.toString(), lines);
+        assertEquals(584, lines.get(583).getLineNumber());
+        assertEquals(
+            "physical get-decompilation line must include embedded newlines",
+            Integer.valueOf(883), map.get(lines.get(583)));
+        assertEquals(
+            Integer.valueOf(883),
+            SemanticProvenanceToolProvider.tokenDisplayLineNumber(
+                lines.get(583), 0, map));
+        assertNotNull(callToken);
+    }
+
+    @Test
+    public void testMultilineTokensWithinClangLineAndUnverifiableRendering() {
+        ClangLine line = new ClangLine(1, 0);
+        line.addToken(new ClangToken(null, "/* first\nsecond */"));
+        line.addToken(new ClangToken(null, "call();"));
+        String c = "/* first\nsecond */call();\n";
+        Map<ClangLine, Integer> map =
+            SemanticProvenanceToolProvider.buildDisplayLineMap(
+                c, List.of(line));
+        assertEquals(
+            Integer.valueOf(1),
+            SemanticProvenanceToolProvider.tokenDisplayLineNumber(
+                line, 0, map));
+        assertEquals(
+            "a token after a newline on the same ClangLine belongs to line 2",
+            Integer.valueOf(2),
+            SemanticProvenanceToolProvider.tokenDisplayLineNumber(
+                line, 1, map));
+
+        Map<ClangLine, Integer> invalid =
+            SemanticProvenanceToolProvider.buildDisplayLineMap(
+                "rendering has no newline", List.of(line));
+        assertTrue(
+            "never fall back to a plausible but wrong Clang ordinal",
+            invalid.isEmpty());
+        assertNull(
+            SemanticProvenanceToolProvider.tokenDisplayLineNumber(
+                line, 1, invalid));
     }
 
 }
