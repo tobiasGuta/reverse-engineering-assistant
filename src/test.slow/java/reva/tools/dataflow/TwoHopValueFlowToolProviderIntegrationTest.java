@@ -161,6 +161,26 @@ public class TwoHopValueFlowToolProviderIntegrationTest
     }
 
     @Test
+    public void testAmbiguousFirstPrototypeStopsBeforeSecondBoundary()
+            throws Exception {
+        String path = openChain();
+        int tx = program.startTransaction("variadic B prototype test");
+        try {
+            program.getFunctionManager().getFunctionAt(addr(B))
+                .setVarArgs(true);
+        }
+        finally {
+            program.endTransaction(tx, true);
+        }
+        JsonNode result = trace(path, 64, 12);
+        assertEquals("ambiguous_first_prototype_or_storage",
+            result.path("firstBoundaryStatus").asText());
+        assertEquals(0, result.path("candidateSecondHops").size());
+        assertFalse(result.path("complete").asBoolean());
+        assertTrue(result.path("intermediateFormalEvidence").isMissingNode());
+    }
+
+    @Test
     public void testVariadicSecondPrototypeCannotProduceCandidate()
             throws Exception {
         String path = openChain();
