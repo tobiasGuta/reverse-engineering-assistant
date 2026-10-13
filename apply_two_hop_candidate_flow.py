@@ -25,9 +25,10 @@ BOUNDED = Path("src/main/java/reva/tools/dataflow/BoundedDataFlowSlice.java")
 
 
 def guarded_registration(original: str, old: str, new: str, label: str) -> str:
-    if original.count(new) == 1 and original.count(old) == 0:
+    # The old registration is itself a substring of the expanded one.
+    if original.count(new) == 1 and original.count(old) == 1:
         return original
-    if original.count(old) != 1 or new in original:
+    if original.count(old) != 1 or original.count(new) != 0:
         raise RuntimeError(f"{label}: unrecognized/partial registration")
     return original.replace(old, new, 1)
 
