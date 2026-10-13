@@ -15,7 +15,8 @@ PROVIDER = Path(
     "src/main/java/reva/tools/dataflow/MemoryOriginCandidateToolProvider.java")
 TEST = Path(
     "src/test.slow/java/reva/tools/dataflow/MemoryOriginCandidateToolProviderIntegrationTest.java")
-OWNED = (PROVIDER, TEST)
+NATIVE = Path("tests/test_memory_origin_libcue_real_binary.py")
+OWNED = (PROVIDER, TEST, NATIVE)
 MANAGER = Path("src/main/java/reva/server/McpServerManager.java")
 CATALOG = Path("tests/test_mcp_tools.py")
 TWO_HOP = Path(
