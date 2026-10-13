@@ -47,6 +47,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
+import reva.util.DecompilationDisplayLines;
 import reva.util.RevaInternalServiceRegistry;
 import reva.util.SchemaUtil;
 
@@ -949,37 +950,12 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
         return text.toString();
     }
 
-    /**
-     * A ClangLine is one pretty-printer emission, not necessarily one physical
-     * line in getC(): token text (notably comments) may contain embedded newlines.
-     * Never substitute getLineNumber() when the rendered mapping is unavailable.
-     */
+    // Package-visible adapters for Slice 3 regression tests.
     static Integer tokenDisplayLineNumber(
             ClangLine line, int tokenIndex,
             Map<ClangLine, Integer> displayLines) {
-        Integer start = displayLines.get(line);
-        if (start == null || tokenIndex < 0 ||
-            tokenIndex >= line.getNumTokens()) {
-            return null;
-        }
-        int physicalLine = start;
-        for (int i = 0; i < tokenIndex; i++) {
-            physicalLine += countLineFeeds(line.getToken(i).getText());
-        }
-        return physicalLine;
-    }
-
-    private static int countLineFeeds(String text) {
-        if (text == null) {
-            return 0;
-        }
-        int result = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                result++;
-            }
-        }
-        return result;
+        return DecompilationDisplayLines.tokenLine(
+            line, tokenIndex, displayLines);
     }
 
     private static Map<ClangLine, Integer> buildDisplayLineMap(
@@ -991,33 +967,9 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
             clangLines);
     }
 
-    // Package-visible for regression coverage of long/multiline functions.
     static Map<ClangLine, Integer> buildDisplayLineMap(
             String renderedC, List<ClangLine> clangLines) {
-        Map<ClangLine, Integer> mapping = new IdentityHashMap<>();
-        if (renderedC == null) {
-            return mapping;
-        }
-
-        // Ghidra PrettyPrinter emits every ClangLine in order, appending a
-        // platform line separator after each. Token text itself may contain
-        // newline characters. Tracking emission position avoids greedy string
-        // matching (which can jump across repeated braces) and incorrect
-        // fallback to a raw Clang line number.
-        int renderedLine = 1;
-        for (ClangLine line : clangLines) {
-            mapping.put(line, renderedLine);
-            renderedLine += countLineFeeds(renderLine(line)) + 1;
-        }
-
-        // get-decompilation splits getC() on LF. If even the total physical
-        // line count diverges, suppress display locations instead of
-        // supplying plausible but wrong numbers. Address/P-code evidence
-        // remains independently available.
-        if (renderedLine - 1 != countLineFeeds(renderedC)) {
-            mapping.clear();
-        }
-        return mapping;
+        return DecompilationDisplayLines.map(renderedC, clangLines);
     }
 
     private DecompInterface createConfiguredDecompiler(
