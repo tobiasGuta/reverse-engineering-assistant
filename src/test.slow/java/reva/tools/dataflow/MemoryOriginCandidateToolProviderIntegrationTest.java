@@ -37,6 +37,7 @@ public class MemoryOriginCandidateToolProviderIntegrationTest
     private static final long HELPER = 0x01000350L;
     private static final long STORE = F + 7;
     private static final long LOAD = F + 22;
+    private static final long RELATED_STORE = F + 24;
 
     private Address addr(long n) {
         return program.getAddressFactory().getDefaultAddressSpace()
@@ -46,7 +47,8 @@ public class MemoryOriginCandidateToolProviderIntegrationTest
     private String openMemoryFixture() throws Exception {
         // push ebp; mov ebp,esp; push esi; mov esi,[ebp+8];
         // mov dword ptr [esi],7; push esi; call helper;
-        // add esp,4; mov eax,[esi]; pop esi; pop ebp; ret
+        // add esp,4; mov eax,[esi]; mov dword ptr [esi+8],9;
+        // pop esi; pop ebp; ret
         byte[] function = new byte[] {
             (byte)0x55, (byte)0x89, (byte)0xe5, (byte)0x56,
             (byte)0x8b, (byte)0x75, (byte)0x08,
@@ -55,6 +57,8 @@ public class MemoryOriginCandidateToolProviderIntegrationTest
             (byte)0xe8, (byte)0x3d, 0, 0, 0,
             (byte)0x83, (byte)0xc4, (byte)0x04,
             (byte)0x8b, (byte)0x06,
+            (byte)0xc7, (byte)0x46, (byte)0x08,
+            (byte)0x09, 0, 0, 0,
             (byte)0x5e, (byte)0x5d, (byte)0xc3
         };
         byte[] helper = new byte[] { (byte)0xc3 };
@@ -134,6 +138,25 @@ public class MemoryOriginCandidateToolProviderIntegrationTest
         assertTrue(result.path("storeSampleSemantics").asText()
             .contains("NOT candidate reaching definitions"));
         assertTrue(result.path("enumerationComplete").asBoolean());
+        assertTrue(result.path("sameBaseDifferentOffsetStores").isArray());
+        assertTrue("Expected distinct-offset lead: " + result,
+            result.path("sameBaseDifferentOffsetStoreCount").asInt() >= 1);
+        boolean relatedFound = false;
+        for (JsonNode related : result.path("sameBaseDifferentOffsetStores")) {
+            if (AddressUtil.formatAddress(addr(RELATED_STORE)).equals(
+                    related.path("storeAddress").asText())) {
+                relatedFound = true;
+                assertEquals("same_ssa_base_distinct_static_offset",
+                    related.path("relation").asText());
+                assertFalse(related.path("sameMemoryAddress").asBoolean());
+                assertEquals("unproven",
+                    related.path("reachingDefinition").asText());
+                assertEquals(8,
+                    related.path("relativeOffsetBytes").asInt());
+            }
+        }
+        assertTrue("Distinct-offset STORE lead missing: " + result,
+            relatedFound);
     }
 
     @Test
