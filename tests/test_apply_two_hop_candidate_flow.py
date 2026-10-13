@@ -12,6 +12,7 @@ BUNDLE = Path(__file__).resolve().parents[1]
 SCRIPT = BUNDLE / "apply_two_hop_candidate_flow.py"
 PROVIDER = Path("src/main/java/reva/tools/dataflow/TwoHopValueFlowToolProvider.java")
 TEST = Path("src/test.slow/java/reva/tools/dataflow/TwoHopValueFlowToolProviderIntegrationTest.java")
+NATIVE = Path("tests/test_two_hop_value_flow_real_binary.py")
 
 
 class TwoHopInstallerTests(unittest.TestCase):
@@ -46,7 +47,7 @@ class TwoHopInstallerTests(unittest.TestCase):
     def test_installs_idempotently(self):
         first = self.run_installer()
         self.assertEqual(0, first.returncode, first.stderr)
-        for file in (PROVIDER, TEST):
+        for file in (PROVIDER, TEST, NATIVE):
             self.assertEqual((BUNDLE / file).read_bytes(),
                              (self.root / file).read_bytes())
         self.assertEqual(1, self.manager.read_text().count(
@@ -58,7 +59,7 @@ class TwoHopInstallerTests(unittest.TestCase):
         snapshot = {
             f: f.read_bytes() for f in (
                 self.manager, self.transport, self.root / PROVIDER,
-                self.root / TEST
+                self.root / TEST, self.root / NATIVE
             )
         }
         second = self.run_installer()
