@@ -268,8 +268,9 @@ async def test_native_one_hop_call_argument(
             expected_callee
         ), positive
         assert positive["calleeEvidence"]["ssaSeeds"], positive
-        assert positive["callerEvidence"]["operations"] != (
-            positive["calleeEvidence"]["operations"]
+        assert positive["calleeEvidence"]["operationCount"] > 0, positive
+        assert positive["callerEvidence"]["function"]["address"] != (
+            positive["calleeEvidence"]["function"]["address"]
         ), positive
         assert "never a runtime-proven" in positive["relationSemantics"], positive
 
