@@ -170,6 +170,108 @@ public class OneHopValueFlowToolProviderIntegrationTest
 
 
 
+
+    @Test
+    public void testCompactBackwardKeepsSelectedArgumentProducerAndNearestMerges()
+            throws Exception {
+        String path = openFixture();
+        assertNotNull(path);
+        Function caller = program.getFunctionManager()
+            .getFunctionAt(address(CALLER));
+
+        VarnodeAST sourceA = new VarnodeAST(address(0x01006000L), 8, 1);
+        VarnodeAST sourceB = new VarnodeAST(address(0x01006008L), 8, 2);
+        VarnodeAST intermediateA =
+            new VarnodeAST(address(0x01006010L), 8, 3);
+        VarnodeAST intermediateB =
+            new VarnodeAST(address(0x01006018L), 8, 4);
+        VarnodeAST mergedA = new VarnodeAST(address(0x01006020L), 8, 5);
+        VarnodeAST mergedB = new VarnodeAST(address(0x01006028L), 8, 6);
+        VarnodeAST argument = new VarnodeAST(address(0x01006030L), 8, 7);
+        PcodeOp oldA = new PcodeOp(address(0x01000380L), 1,
+            PcodeOp.COPY, new Varnode[] { sourceA }, intermediateA);
+        PcodeOp oldB = new PcodeOp(address(0x01000390L), 2,
+            PcodeOp.COPY, new Varnode[] { sourceB }, intermediateB);
+        intermediateA.setDef(oldA);
+        intermediateB.setDef(oldB);
+        PcodeOp phiA = new PcodeOp(address(0x01000580L), 3,
+            PcodeOp.MULTIEQUAL, new Varnode[] { intermediateA, sourceA },
+            mergedA);
+        PcodeOp phiB = new PcodeOp(address(0x01000590L), 4,
+            PcodeOp.MULTIEQUAL, new Varnode[] { intermediateB, sourceB },
+            mergedB);
+        mergedA.setDef(phiA);
+        mergedB.setDef(phiB);
+        PcodeOp producer = new PcodeOp(address(0x01000780L), 5,
+            PcodeOp.INT_SUB, new Varnode[] { mergedA, mergedB }, argument);
+        argument.setDef(producer);
+
+        BoundedDataFlowSlice.Result slice = BoundedDataFlowSlice.collect(
+            List.of(argument), BoundedDataFlowSlice.Direction.BACKWARD, 16);
+        assertFalse(slice.truncated());
+        assertEquals(5, slice.operations().size());
+        // The old first-3-sequences policy loses the argument producer.
+        assertFalse(new java.util.ArrayList<>(slice.operations())
+            .subList(0, 3).contains(producer));
+
+        List<PcodeOp> selected =
+            OneHopValueFlowToolProvider.selectReportedOperations(
+                slice, List.of(argument),
+                BoundedDataFlowSlice.Direction.BACKWARD, 3);
+        assertEquals(List.of(producer, phiA, phiB), selected);
+
+        Map<String, Object> compact = OneHopValueFlowToolProvider.sliceEvidence(
+            caller, argument, slice, 3);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> operations =
+            (List<Map<String, Object>>) compact.get("operations");
+        assertEquals("INT_SUB", operations.get(0).get("opcode"));
+        assertEquals("MULTIEQUAL", operations.get(1).get("opcode"));
+        assertEquals("MULTIEQUAL", operations.get(2).get("opcode"));
+        assertEquals(2, compact.get("operationsOmitted"));
+        assertEquals("seed_proximity_within_observed_slice",
+            compact.get("operationSelection"));
+        assertEquals(Boolean.FALSE, compact.get("complete"));
+
+        // Default callers preserve the original full ordered records.
+        List<PcodeOp> full =
+            OneHopValueFlowToolProvider.selectReportedOperations(
+                slice, List.of(argument),
+                BoundedDataFlowSlice.Direction.BACKWARD, 16);
+        assertEquals(new java.util.ArrayList<>(slice.operations()), full);
+    }
+
+    @Test
+    public void testCompactForwardKeepsFormalDirectConsumersBeforeLaterUses()
+            throws Exception {
+        String path = openFixture();
+        assertNotNull(path);
+        VarnodeAST formal = new VarnodeAST(address(0x01006100L), 8, 1);
+        VarnodeAST first = new VarnodeAST(address(0x01006110L), 8, 2);
+        VarnodeAST second = new VarnodeAST(address(0x01006118L), 8, 3);
+        VarnodeAST deep = new VarnodeAST(address(0x01006120L), 8, 4);
+        PcodeOp directA = new PcodeOp(address(0x01000700L), 1,
+            PcodeOp.COPY, new Varnode[] { formal }, first);
+        PcodeOp directB = new PcodeOp(address(0x01000710L), 2,
+            PcodeOp.COPY, new Varnode[] { formal }, second);
+        PcodeOp later = new PcodeOp(address(0x01000300L), 3,
+            PcodeOp.INT_ADD, new Varnode[] { first, second }, deep);
+        formal.addDescendant(directA);
+        formal.addDescendant(directB);
+        first.addDescendant(later);
+        second.addDescendant(later);
+
+        BoundedDataFlowSlice.Result slice = BoundedDataFlowSlice.collect(
+            List.of(formal), BoundedDataFlowSlice.Direction.FORWARD, 16);
+        assertFalse(slice.truncated());
+        assertEquals(3, slice.operations().size());
+        List<PcodeOp> selected =
+            OneHopValueFlowToolProvider.selectReportedOperations(
+                slice, List.of(formal),
+                BoundedDataFlowSlice.Direction.FORWARD, 2);
+        assertEquals(List.of(directA, directB), selected);
+    }
+
     @Test
     public void testMcpAcceptsOptionalCompactReportingLimit() throws Exception {
         String path = openFixture();
