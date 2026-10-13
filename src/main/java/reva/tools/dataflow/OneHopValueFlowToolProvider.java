@@ -10,10 +10,13 @@
 package reva.tools.dataflow;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
@@ -194,7 +197,8 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 BoundedDataFlowSlice.Result callerSlice = BoundedDataFlowSlice.collect(
                     List.of(argument), BoundedDataFlowSlice.Direction.BACKWARD, maxOps);
                 Map<String, Object> callerEvidence =
-                    sliceEvidence(caller, argument, callerSlice, maxReportedOps);
+                    sliceEvidence(caller, List.of(argument), callerSlice,
+                        BoundedDataFlowSlice.Direction.BACKWARD, maxReportedOps);
                 result.put("callerEvidence", callerEvidence);
 
                 if (call.getOpcode() == PcodeOp.CALLIND) {
@@ -314,7 +318,8 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 formalEvidence.put("ssaInstanceCount", seeds.size());
                 result.put("calleeFormal", formalEvidence);
                 Map<String, Object> calleeEvidence =
-                    sliceEvidence(callee, seeds.get(0), calleeSlice, maxReportedOps);
+                    sliceEvidence(callee, seeds, calleeSlice,
+                        BoundedDataFlowSlice.Direction.FORWARD, maxReportedOps);
                 List<Map<String, Object>> seedNodes = new ArrayList<>();
                 for (Varnode node : seeds) {
                     seedNodes.add(describeNode(node));
@@ -452,16 +457,137 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         return result;
     }
 
+
+    /**
+     * Select only operations already observed by the bounded SSA traversal.
+     * When a compact cap applies, prioritize the seed's closest producers
+     * (backward) or consumers (forward), breadth-first. Sorting each distance
+     * layer by P-code sequence makes the result independent of def/use
+     * iteration order. Remaining slots use the original sequence order.
+     *
+     * This is OUTPUT selection, not additional dataflow exploration. Never
+     * follow a definition outside slice.operations(), or across CALLs.
+     */
+    static List<PcodeOp> selectReportedOperations(
+            BoundedDataFlowSlice.Result slice, List<Varnode> seeds,
+            BoundedDataFlowSlice.Direction direction, int limit) {
+        List<PcodeOp> observedOrder = new ArrayList<>(slice.operations());
+        if (limit >= observedOrder.size()) {
+            return observedOrder; // Frozen full-operation response ordering.
+        }
+        List<PcodeOp> selected = new ArrayList<>();
+        if (limit == 0) {
+            return selected;
+        }
+
+        Set<PcodeOp> observed =
+            Collections.newSetFromMap(new IdentityHashMap<PcodeOp, Boolean>());
+        observed.addAll(observedOrder);
+        Set<PcodeOp> chosen =
+            Collections.newSetFromMap(new IdentityHashMap<PcodeOp, Boolean>());
+        Set<Varnode> visited =
+            Collections.newSetFromMap(new IdentityHashMap<Varnode, Boolean>());
+
+        // The forward index is built ONLY from the bounded observed set.
+        // Limit operand inspection to match the existing 32-input output cap.
+        Map<Varnode, List<PcodeOp>> consumers = new IdentityHashMap<>();
+        if (direction == BoundedDataFlowSlice.Direction.FORWARD) {
+            for (PcodeOp op : observedOrder) {
+                for (int i = 0; i < Math.min(op.getNumInputs(),
+                        MAX_SERIALIZED_INPUTS_PER_OP); i++) {
+                    Varnode node = op.getInput(i);
+                    if (node != null) {
+                        consumers.computeIfAbsent(node,
+                            ignored -> new ArrayList<>()).add(op);
+                    }
+                }
+            }
+        }
+
+        List<Varnode> frontier = new ArrayList<>(seeds);
+        while (!frontier.isEmpty() && selected.size() < limit) {
+            List<PcodeOp> level = new ArrayList<>();
+            for (Varnode node : frontier) {
+                if (node == null || !visited.add(node)) {
+                    continue;
+                }
+                if (direction == BoundedDataFlowSlice.Direction.BACKWARD) {
+                    PcodeOp def = node.getDef();
+                    if (def != null && observed.contains(def) &&
+                        !chosen.contains(def)) {
+                        level.add(def);
+                    }
+                }
+                else {
+                    for (PcodeOp use : consumers.getOrDefault(node, List.of())) {
+                        if (!chosen.contains(use)) {
+                            level.add(use);
+                        }
+                    }
+                }
+            }
+            level.sort(Comparator.comparing(PcodeOp::getSeqnum));
+            List<Varnode> next = new ArrayList<>();
+            for (PcodeOp op : level) {
+                if (!chosen.add(op)) {
+                    continue;
+                }
+                selected.add(op);
+                if (selected.size() >= limit) {
+                    break;
+                }
+                // A call result/argument is an analysis boundary, not a
+                // gateway into callee SSA or other side effects.
+                if (op.getOpcode() == PcodeOp.CALL ||
+                    op.getOpcode() == PcodeOp.CALLIND) {
+                    continue;
+                }
+                if (direction == BoundedDataFlowSlice.Direction.BACKWARD) {
+                    for (int i = 0; i < Math.min(op.getNumInputs(),
+                            MAX_SERIALIZED_INPUTS_PER_OP); i++) {
+                        Varnode input = op.getInput(i);
+                        if (input != null) {
+                            next.add(input);
+                        }
+                    }
+                }
+                else if (op.getOutput() != null) {
+                    next.add(op.getOutput());
+                }
+            }
+            frontier = next;
+        }
+        for (PcodeOp op : observedOrder) {
+            if (selected.size() >= limit) {
+                break;
+            }
+            if (chosen.add(op)) {
+                selected.add(op);
+            }
+        }
+        return selected;
+    }
+
     static Map<String, Object> sliceEvidence(
             Function function, Varnode seed,
             BoundedDataFlowSlice.Result slice) {
         // Preserve the frozen Slice 5B result contract for existing callers.
-        return sliceEvidence(function, seed, slice, HARD_MAX_OPS);
+        return sliceEvidence(function, List.of(seed), slice,
+            BoundedDataFlowSlice.Direction.BACKWARD, HARD_MAX_OPS);
     }
 
     static Map<String, Object> sliceEvidence(
             Function function, Varnode seed,
             BoundedDataFlowSlice.Result slice, int maxReportedOperations) {
+        return sliceEvidence(function, List.of(seed), slice,
+            BoundedDataFlowSlice.Direction.BACKWARD, maxReportedOperations);
+    }
+
+    static Map<String, Object> sliceEvidence(
+            Function function, List<Varnode> seeds,
+            BoundedDataFlowSlice.Result slice,
+            BoundedDataFlowSlice.Direction direction,
+            int maxReportedOperations) {
         if (maxReportedOperations < 0 ||
             maxReportedOperations > HARD_MAX_OPS) {
             throw new IllegalArgumentException(
@@ -469,7 +595,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         }
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("function", identity(function));
-        evidence.put("seed", describeNode(seed));
+        evidence.put("seed", describeNode(seeds.get(0)));
         // Completion is finalized after output serialization, because
         // large P-code operands may have to be capped independently.
         evidence.put("complete", !slice.truncated());
@@ -479,12 +605,14 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         evidence.put("scannedEdges", slice.scannedEdges());
         evidence.put("operationCount", slice.operations().size());
         evidence.put("operationSummary", operationSummary(slice));
+        evidence.put("operationSelection", maxReportedOperations <
+            slice.operations().size()
+            ? "seed_proximity_within_observed_slice"
+            : "full_observed_sequence_order");
         List<Map<String, Object>> operations = new ArrayList<>();
         boolean operandsTruncated = false;
-        for (PcodeOp op : slice.operations()) {
-            if (operations.size() >= maxReportedOperations) {
-                break;
-            }
+        for (PcodeOp op : selectReportedOperations(
+                slice, seeds, direction, maxReportedOperations)) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("sequence", op.getSeqnum().toString());
             item.put("address",
