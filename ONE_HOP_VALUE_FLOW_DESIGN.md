@@ -1,6 +1,6 @@
 # Slice 5B — One-Hop Call-Argument Value Flow
 
-**Status: IMPLEMENTED IN DEVELOPMENT; NOT YET TESTED ON FEDORA OR FROZEN.**
+**Status: IMPLEMENTED IN DEVELOPMENT; Java/Ghidra integration passed, native ELF prototype-ambiguity regression updated and awaiting Fedora verification. NOT FROZEN.**
 **Base:** `feat/dataflow-reliability-foundation`, after its narrowly scoped
 engineering freeze. The existing frozen Slices 1–5A and bounded
 intraprocedural dataflow implementation must remain unchanged.
@@ -95,9 +95,19 @@ debugger integration, shell access, or network actions.
    new Java and ELF regressions alongside frozen Slices 1–5A and the
    bounded intraprocedural dataflow suite.
 
-**Verification: NOT RUN.** Code review and committed tests do not establish
-compilation or runtime correctness. Any errors must be resolved from the
-actual Fedora/Ghidra test output.
+**Observed Fedora verification:** the guarded installer passed 4/4 offline
+tests; Java compilation, Ghidra integration tests (including controlled
+truncation), MCP transport, Slice 5A ELF, and bounded dataflow ELF tests
+passed. The first native one-hop ELF cases at `-O0` and `-O2` correctly
+identified the direct target but returned
+`ambiguous_prototype_or_storage` instead of the originally assumed
+positional candidate. Ghidra 12.1.3's function API recognizes unknown
+calling-convention names as an explicit uncertainty condition. The tool
+now reports each such ambiguity and native regressions require that a
+rejected relation expose concrete, matching reasons and no invented
+callee graph. **Those changes are pending a refreshed Fedora run.**
+The synthetic Java Ghidra tests continue to require a positive
+candidate for explicitly defined calling-convention fixtures.
 
 ## Non-negotiable acceptance tests
 
