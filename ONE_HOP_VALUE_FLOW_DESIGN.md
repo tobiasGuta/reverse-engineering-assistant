@@ -1,6 +1,6 @@
 # Slice 5B — One-Hop Call-Argument Value Flow
 
-**Status: IMPLEMENTED IN DEVELOPMENT; Java/Ghidra integration passed, native ELF prototype-ambiguity regression updated and awaiting Fedora verification. NOT FROZEN.**
+**Status: IMPLEMENTED AND ISOLATED-VERIFIED ON FEDORA (2026-10-12); NOT FROZEN.** Native ELF tests accept proven candidate evidence or explicitly grounded prototype ambiguity; a real-ELF positive candidate still needs separate confirmation.
 **Base:** `feat/dataflow-reliability-foundation`, after its narrowly scoped
 engineering freeze. The existing frozen Slices 1–5A and bounded
 intraprocedural dataflow implementation must remain unchanged.
@@ -74,7 +74,7 @@ associate memory aliases. Calls encountered during a local slice remain
 CALL/CALLIND boundaries. No target execution, Ghidra project mutation,
 debugger integration, shell access, or network actions.
 
-## Implementation delivered (verification pending)
+## Implementation delivered and verified in the isolated development environment
 
 1. `OneHopValueFlowToolProvider.java` adds the new MCP command within
    the dataflow package, calling the already frozen `BoundedDataFlowSlice`
@@ -105,9 +105,23 @@ positional candidate. Ghidra 12.1.3's function API recognizes unknown
 calling-convention names as an explicit uncertainty condition. The tool
 now reports each such ambiguity and native regressions require that a
 rejected relation expose concrete, matching reasons and no invented
-callee graph. **Those changes are pending a refreshed Fedora run.**
-The synthetic Java Ghidra tests continue to require a positive
-candidate for explicitly defined calling-convention fixtures.
+callee graph. **The refreshed full Fedora verifier passed on 2026-10-12.** The
+user-supplied run completed Java build and Ghidra integration
+(`BUILD SUCCESSFUL in 1m 8s`), extension packaging
+(`BUILD SUCCESSFUL in 6s`), MCP transport (3/3), Slice 5A ELF (2/2),
+bounded dataflow ELF (2/2), and the updated Slice 5B native ELF
+`-O0`/`-O2` tests (2/2, 9.95 seconds). The script printed the final
+one-hop development verification marker. The test suite checks that
+ambiguous real-ELF calling conventions do not produce invented callee
+graphs; it does **not** necessarily show a positive two-sided native-ELF
+candidate. The synthetic Java Ghidra integration tests do require a
+positive candidate with an explicitly defined calling convention.
+
+**Freeze gate still open:** demonstrate positive, useful bounded one-hop
+evidence on at least one real imported binary with a grounded known
+callee signature, without weakening the unknown-convention guard.
+Keep the development branch distinct from the normal ReVa/Ghidra
+installation.
 
 ## Non-negotiable acceptance tests
 
