@@ -29,6 +29,7 @@ import ghidra.program.model.pcode.HighVariable;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.PcodeOpAST;
 import ghidra.program.model.pcode.Varnode;
+import ghidra.program.model.pcode.VarnodeAST;
 import ghidra.util.task.TimeoutTaskMonitor;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -44,6 +45,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
     private static final int DEFAULT_MAX_OPS = 128;
     private static final int HARD_MAX_OPS = 500;
     private static final int MAX_CALL_ARGS = 128;
+    private static final int MAX_SERIALIZED_INPUTS_PER_OP = 32;
     private static final int DECOMPILE_TIMEOUT_SECONDS = 30;
     private static final String SEMANTICS =
         "Separate caller backward and callee forward Ghidra High P-code " +
@@ -314,6 +316,15 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         item.put("constant", node.isConstant());
         item.put("register", node.isRegister());
         item.put("unique", node.isUnique());
+        if (node instanceof VarnodeAST ast) {
+            item.put("ssaUniqueId", ast.getUniqueId());
+        }
+        if (node.getDef() != null && node.getDef().getSeqnum() != null) {
+            item.put("definingOperation", node.getDef().getSeqnum().toString());
+        }
+        if (node.getHigh() != null && node.getHigh().getName() != null) {
+            item.put("highVariableName", node.getHigh().getName());
+        }
         if (node.isConstant()) {
             item.put("constantUnsignedHex",
                 Long.toUnsignedString(node.getOffset(), 16));
@@ -341,6 +352,17 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 AddressUtil.formatAddress(op.getSeqnum().getTarget()));
             item.put("opcode", op.getMnemonic());
             item.put("inputCount", op.getNumInputs());
+            item.put("inputsTruncated",
+                op.getNumInputs() > MAX_SERIALIZED_INPUTS_PER_OP);
+            List<Map<String, Object>> inputs = new ArrayList<>();
+            for (int i = 0; i < Math.min(op.getNumInputs(),
+                    MAX_SERIALIZED_INPUTS_PER_OP); i++) {
+                Varnode input = op.getInput(i);
+                inputs.add(input == null ? null : describeNode(input));
+            }
+            item.put("inputs", inputs);
+            Varnode output = op.getOutput();
+            item.put("output", output == null ? null : describeNode(output));
             operations.add(item);
         }
         evidence.put("operations", operations);
