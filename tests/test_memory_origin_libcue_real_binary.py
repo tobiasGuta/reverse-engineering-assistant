@@ -105,6 +105,35 @@ async def test_known_libcue_parser_stack_load_remains_unresolved_without_proof(
     assert result["scanTruncated"] == (
         result["status"] == "incomplete_scan_budget"
     ), result
+    assert result["sameBaseDifferentOffsetStoreCount"] >= len(
+        result["sameBaseDifferentOffsetStores"]
+    ), result
+    assert result["sameBaseDifferentOffsetStoresOmitted"] == (
+        result["sameBaseDifferentOffsetStoreCount"] -
+        len(result["sameBaseDifferentOffsetStores"])
+    ), result
+    assert len(result["sameBaseDifferentOffsetStores"]) <= 8, result
+    # Real libcue has earlier/later stores sharing the LOAD's reported
+    # parser-stack SSA pointer root but using a distinct (+8) offset.
+    # These are investigative leads, not equal-address or runtime edges.
+    expected_related = {
+        "vulnerable": {0x001018bd, 0x00102667},
+        "patched": {0x0010189d, 0x00102647},
+    }[version]
+    reported_related = {
+        int(item["storeAddress"], 16)
+        for item in result["sameBaseDifferentOffsetStores"]
+    }
+    assert expected_related <= reported_related, (
+        version, expected_related, reported_related, result
+    )
+    for related in result["sameBaseDifferentOffsetStores"]:
+        assert related["relation"] == (
+            "same_ssa_base_distinct_static_offset"
+        ), related
+        assert related["sameMemoryAddress"] is False, related
+        assert related["reachingDefinition"] == "unproven", related
+        assert related["relativeOffsetBytes"] == 24, related
 
     for candidate in result["candidateStores"]:
         assert candidate["addressRelation"] == (
@@ -131,6 +160,10 @@ async def test_known_libcue_parser_stack_load_remains_unresolved_without_proof(
         "storesInLoadMemorySpace": result["storesInLoadMemorySpace"],
         "sameOffsetDifferentSsaRootStores":
             result["sameOffsetDifferentSsaRootStores"],
+        "sameBaseDifferentOffsetStoreCount":
+            result["sameBaseDifferentOffsetStoreCount"],
+        "sameBaseDifferentOffsetStores":
+            result["sameBaseDifferentOffsetStores"],
         "storePointerNormalizationCounts":
             result["storePointerNormalizationCounts"],
         "observedStoreSample": result["observedStoreSample"],
