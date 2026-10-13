@@ -86,6 +86,66 @@ def assert_eligible_or_explicitly_ambiguous(result, caller_name, callee_name, in
     return False
 
 
+async def establish_known_fixture_signature(
+    client, program: str, callee_name: str, signature: str,
+) -> dict:
+    """Annotate only this imported ELF inside the disposable MCP project.
+
+    The C declaration comes from the compiled fixture source, not from an
+    inferred decompiler guess. The Ghidra compiler spec for this imported ELF
+    supplies its platform-default calling convention. This is a controlled
+    acceptance fixture, NOT an inference of ABI facts by the one-hop tool.
+    """
+    address = await resolve_function_address(client, program, callee_name)
+    parsed = await tool(
+        client, "set-function-prototype",
+        programPath=program, location=address,
+        signature=signature, createIfNotExists=False,
+    )
+    assert parsed.get("success") is True, parsed
+    assert parsed.get("created") is False, parsed
+    assert parsed.get("usingCustomStorage") is False, parsed
+
+    # The upstream prototype-setting tool deliberately does not modify the
+    # calling convention. Ghidra must receive that metadata separately.
+    # This inline script runs only against the disposable project's import,
+    # after verifying the exact function identity and platform-default model.
+    entry = canonical_address(address)
+    code = f"""
+fm = currentProgram.getFunctionManager()
+addr = currentProgram.getAddressFactory().getDefaultAddressSpace().getAddress({entry})
+func = fm.getFunctionAt(addr)
+assert func is not None and func.getName() == {callee_name!r}
+model = currentProgram.getCompilerSpec().getDefaultCallingConvention()
+assert model is not None
+model_name = str(model.getName())
+assert model_name and model_name != 'unknown'
+assert func.getParameterCount() == {signature.count(',') + 1}
+tx = currentProgram.startTransaction('test-only known ABI for imported ELF')
+success = False
+try:
+    func.setCallingConvention(model_name)
+    assert not func.hasUnknownCallingConventionName()
+    assert not func.hasCustomVariableStorage()
+    assert not func.hasVarArgs()
+    assert str(func.getSignatureSource()) == 'USER_DEFINED'
+    success = True
+finally:
+    currentProgram.endTransaction(tx, success)
+print('REVA_KNOWN_ABI=' + model_name)
+"""
+    applied = await tool(
+        client, "run-script", programPath=program, code=code,
+        timeoutSeconds=30,
+    )
+    assert applied.get("success") is True, applied
+    assert applied.get("timedOut") is False, applied
+    assert applied.get("stdoutTruncated") is False, applied
+    assert "REVA_KNOWN_ABI=" in applied.get("stdout", ""), applied
+    return {"functionAddress": address, "signature": signature,
+            "model": applied["stdout"].split("REVA_KNOWN_ABI=", 1)[1].split()[0]}
+
+
 @pytest.mark.parametrize("optimization", ["O0", "O2"])
 async def test_native_one_hop_call_argument(
     optimization: str, mcp_stdio_client, isolated_workspace: Path
@@ -162,5 +222,55 @@ async def test_native_one_hop_call_argument(
         second, "slice5a_caller_two", "slice5a_transform_two", 1
     )
     assert second["argumentCount"] == 2, second
+
+    # Positive real-binary gate: declare the known C function signatures in
+    # the disposable Ghidra project and bind their platform-default ABI.
+    # This proves the tool can return two independent graphs when the
+    # prerequisite prototype evidence is actually established.
+    known_first = await establish_known_fixture_signature(
+        mcp_stdio_client, program, "slice5a_transform",
+        "int slice5a_transform(int value)",
+    )
+    known_second = await establish_known_fixture_signature(
+        mcp_stdio_client, program, "slice5a_transform_two",
+        "int slice5a_transform_two(int first, int second)",
+    )
+    assert known_first["model"] and known_second["model"], (
+        known_first, known_second
+    )
+
+    for site_address, argument_index, expected_callee in (
+        (site, 0, "slice5a_transform"),
+        (second_site, 1, "slice5a_transform_two"),
+    ):
+        positive = await tool(
+            mcp_stdio_client, "trace-call-argument-one-hop",
+            programPath=program, callsite=site_address,
+            argumentIndex=argument_index, maxOperations=128,
+        )
+        assert positive["relationStatus"] == (
+            "decompiler_positional_candidate"
+        ), positive
+        assert positive["complete"] is True, positive
+        assert positive["callee"]["name"] == expected_callee, positive
+        assert positive["calleeUnknownCallingConvention"] is False, positive
+        assert positive["calleeCustomStorage"] is False, positive
+        assert positive["calleeVariadic"] is False, positive
+        assert positive["calleeSignatureSource"] == "USER_DEFINED", positive
+        assert positive["prototypeAmbiguities"] == [], positive
+        assert positive["calleeFormal"]["slot"] == argument_index, positive
+        assert positive["callerEvidence"]["complete"] is True, positive
+        assert positive["calleeEvidence"]["complete"] is True, positive
+        assert positive["callerEvidence"]["function"]["name"] in (
+            "slice5a_caller", "slice5a_caller_two"
+        ), positive
+        assert positive["calleeEvidence"]["function"]["name"] == (
+            expected_callee
+        ), positive
+        assert positive["calleeEvidence"]["ssaSeeds"], positive
+        assert positive["callerEvidence"]["operations"] != (
+            positive["calleeEvidence"]["operations"]
+        ), positive
+        assert "never a runtime-proven" in positive["relationSemantics"], positive
 
     assert hashlib.sha256(binary.read_bytes()).hexdigest() == before
