@@ -225,8 +225,15 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                             related.put("storeSequence", op.getSeqnum().toString());
                             related.put("loadOffsetBytes", loadPointer.offset());
                             related.put("storeOffsetBytes", storePointer.offset());
-                            related.put("relativeOffsetBytes",
-                                storePointer.offset() - loadPointer.offset());
+                            try {
+                                related.put("relativeOffsetBytes",
+                                    Math.subtractExact(storePointer.offset(),
+                                        loadPointer.offset()));
+                            }
+                            catch (ArithmeticException overflow) {
+                                related.put("relativeOffsetBytes", null);
+                                related.put("offsetDifferenceOverflow", true);
+                            }
                             related.put("storedWidthBytes", op.getInput(2).getSize());
                             related.put("relation",
                                 "same_ssa_base_distinct_static_offset");
