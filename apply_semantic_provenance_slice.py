@@ -104,6 +104,60 @@ def patch_incoming_reference_lines(source_path: Path) -> None:
     print(f"edit  {source_path} (verified physical-line correction)")
 
 
+def ensure_semantic_registration(manager_text: str) -> str:
+    """Accept a fully registered Slice 3 in later-layered ReVa checkouts."""
+    imported = "import reva.tools.provenance.SemanticProvenanceToolProvider;\n"
+    constructed = "new SemanticProvenanceToolProvider(server)"
+    import_count = manager_text.count(imported)
+    constructor_count = manager_text.count(constructed)
+
+    if import_count == 1 and constructor_count == 1:
+        # Slices 4/5A/5B extend this exact provider list; the original
+        # Slice 3 closing ");" no longer exists after layering.
+        return manager_text
+    if import_count != 0 or constructor_count != 0:
+        raise RuntimeError(
+            "Partial or duplicate SemanticProvenance registration; refusing to guess"
+        )
+
+    manager_next = replace_once(
+        manager_text,
+        "import reva.tools.stackabi.StackAbiToolProvider;\n",
+        "import reva.tools.stackabi.StackAbiToolProvider;\n" + imported,
+        "SemanticProvenance provider import",
+    )
+    return replace_once(
+        manager_next,
+        """                    new SourceMetadataToolProvider(server),
+                    new StackAbiToolProvider(server));""",
+        """                    new SourceMetadataToolProvider(server),
+                    new StackAbiToolProvider(server),
+                    new SemanticProvenanceToolProvider(server));""",
+        "ADVANCED_ANALYSIS SemanticProvenance registration",
+    )
+
+
+def ensure_semantic_transport(transport_text: str) -> str:
+    """Do not reinsert tools into an already expanded MCP catalog."""
+    names = (
+        '    "get-decompiler-provenance",\n',
+        '    "get-callsite-semantics",\n',
+    )
+    counts = [transport_text.count(name) for name in names]
+    if counts == [1, 1]:
+        return transport_text
+    if counts != [0, 0]:
+        raise RuntimeError(
+            "Partial or duplicate SemanticProvenance MCP catalog entries"
+        )
+    return replace_once(
+        transport_text,
+        '    "get-function-abi",\n',
+        '    "get-function-abi",\n' + "".join(names),
+        "transport SemanticProvenance expectations",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -188,38 +242,26 @@ def main() -> int:
         repo / "src/main/java/reva/util/DecompilationContextUtil.java"
     )
 
-    manager_text = replace_once(
-        manager_text,
-        "import reva.tools.stackabi.StackAbiToolProvider;\n",
-        "import reva.tools.stackabi.StackAbiToolProvider;\n"
-        "import reva.tools.provenance.SemanticProvenanceToolProvider;\n",
-        "SemanticProvenance provider import",
+    # Preflight registration before any possible metadata write.
+    manager_next = ensure_semantic_registration(manager_text)
+    transport_next = (
+        ensure_semantic_transport(transport_test.read_text())
+        if transport_test.exists() else None
     )
 
-    manager_text = replace_once(
-        manager_text,
-        """                    new SourceMetadataToolProvider(server),
-                    new StackAbiToolProvider(server));""",
-        """                    new SourceMetadataToolProvider(server),
-                    new StackAbiToolProvider(server),
-                    new SemanticProvenanceToolProvider(server));""",
-        "ADVANCED_ANALYSIS SemanticProvenance registration",
-    )
-    manager.write_text(manager_text)
-    print(f"edit  {manager}")
+    if manager_next != manager_text:
+        manager.write_text(manager_next)
+        print(f"edit  {manager}")
+    else:
+        print(f"keep  {manager} (registration already present)")
 
-    if transport_test.exists():
-        transport_text = transport_test.read_text()
-        transport_text = replace_once(
-            transport_text,
-            '    "get-function-abi",\n',
-            '    "get-function-abi",\n'
-            '    "get-decompiler-provenance",\n'
-            '    "get-callsite-semantics",\n',
-            "transport SemanticProvenance expectations",
-        )
-        transport_test.write_text(transport_text)
-        print(f"edit  {transport_test}")
+    if transport_next is not None:
+        original_transport = transport_test.read_text()
+        if transport_next != original_transport:
+            transport_test.write_text(transport_next)
+            print(f"edit  {transport_test}")
+        else:
+            print(f"keep  {transport_test} (MCP tools already listed)")
 
     print("\nApplied Slice 3 semantic provenance. No commit was created.")
     print("Review with: git diff --check && git diff --stat && git diff")
