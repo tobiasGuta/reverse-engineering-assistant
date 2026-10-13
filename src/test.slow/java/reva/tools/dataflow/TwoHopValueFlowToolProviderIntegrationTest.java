@@ -67,12 +67,19 @@ public class TwoHopValueFlowToolProviderIntegrationTest
             (byte)0x5d,(byte)0xc3};
         int tx = program.startTransaction("two-hop fixture");
         try {
-            for (int i = 0; i < 3; i++) {
-                long entry = i == 0 ? A : i == 1 ? B : C;
-                byte[] bytes = i == 0 ? a : i == 1 ? b : c;
-                program.getMemory().setBytes(addr(entry), bytes);
-                assertTrue(new DisassembleCommand(addr(entry), null, true)
-                    .applyTo(program, TaskMonitor.DUMMY));
+            // Populate every target BEFORE disassembling anything. Ghidra
+            // follows direct CALLs and may create target instructions while
+            // disassembling the caller; later writes would then conflict.
+            program.getMemory().setBytes(addr(A), a);
+            program.getMemory().setBytes(addr(B), b);
+            program.getMemory().setBytes(addr(C), c);
+            // Disassemble callees first to avoid relying on auto-follow.
+            for (long entry : new long[]{C, B, A}) {
+                if (program.getListing().getInstructionAt(addr(entry)) == null) {
+                    assertTrue(new DisassembleCommand(addr(entry), null, true)
+                        .applyTo(program, TaskMonitor.DUMMY));
+                }
+                assertNotNull(program.getListing().getInstructionAt(addr(entry)));
             }
             FunctionManager manager = program.getFunctionManager();
             Function fnA = manager.createFunction("chainA", addr(A),
