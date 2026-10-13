@@ -49,6 +49,29 @@ def apply(repo: Path, bundle: Path, refresh: bool) -> None:
 
     manager_original = manager.read_text()
     transport_original = transport.read_text()
+    # Reject partial ownership markers before attempting any expansion.
+    owner_import = "import reva.tools.dataflow.TwoHopValueFlowToolProvider;\\n"
+    owner_ctor = "new TwoHopValueFlowToolProvider(server)"
+    owner_tool = '"trace-call-argument-two-hop"'
+    complete_import = (
+        "import reva.tools.dataflow.OneHopValueFlowToolProvider;\\n"
+        "import reva.tools.dataflow.TwoHopValueFlowToolProvider;\\n"
+    )
+    complete_ctor = (
+        "                    new OneHopValueFlowToolProvider(server),\\n"
+        "                    new TwoHopValueFlowToolProvider(server));"
+    )
+    complete_tool = (
+        '    "trace-call-argument-one-hop",\\n'
+        '    "trace-call-argument-two-hop",\\n'
+    )
+    if ((owner_import in manager_original and
+            manager_original.count(complete_import) != 1) or
+        (owner_ctor in manager_original and
+            manager_original.count(complete_ctor) != 1) or
+        (owner_tool in transport_original and
+            transport_original.count(complete_tool) != 1)):
+        raise RuntimeError("Partial two-hop registration; refusing to guess")
     manager_next = guarded_registration(
         manager_original,
         "import reva.tools.dataflow.OneHopValueFlowToolProvider;\n",
