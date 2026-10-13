@@ -30,6 +30,16 @@ java -version
 
 git diff --check
 
+# Fast acceptance for Python-only real-ELF tests after an unchanged Java
+# provider has already passed the complete verifier. Still packages the
+# exact extension and tests it in an isolated copied Ghidra installation.
+REVA_VERIFY_ONE_HOP_NATIVE_ONLY="${REVA_VERIFY_ONE_HOP_NATIVE_ONLY:-0}"
+case "$REVA_VERIFY_ONE_HOP_NATIVE_ONLY" in
+  0|1) ;;
+  *) echo "error: REVA_VERIFY_ONE_HOP_NATIVE_ONLY must be 0 or 1" >&2; exit 2 ;;
+esac
+
+if [[ "$REVA_VERIFY_ONE_HOP_NATIVE_ONLY" == 0 ]]; then
 "${GRADLE_CMD[@]}" test --info
 
 "${GRADLE_CMD[@]}" integrationTest \
@@ -44,6 +54,7 @@ git diff --check
   --tests '*BoundedDataFlowSliceIntegrationTest' \
   --tests '*OneHopValueFlowToolProviderIntegrationTest' \
   --info
+fi
 
 # Build the exact extension under test. Python/PyGhidra discovers ReVa as a
 # Ghidra extension, so running pytest against the normal workstation Ghidra
@@ -95,6 +106,7 @@ mkdir -p "$SCRATCH_ROOT/xdg"
 printf '\nEnsuring uv-managed CPython 3.13 is available...\n'
 uv python install 3.13
 
+if [[ "$REVA_VERIFY_ONE_HOP_NATIVE_ONLY" == 0 ]]; then
 printf '\nRunning Python MCP transport check against isolated development extension...\n'
 GHIDRA_INSTALL_DIR="$SCRATCH_GHIDRA" \
 XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
@@ -121,6 +133,8 @@ XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
 UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_dataflow_reliability_real_binary.py -q
 
+fi
+
 # Verify the one-hop tool against actual compiled direct-call ELF functions,
 # using exactly the scratch Ghidra extension and isolated stdio MCP project.
 printf '\nRunning O0/O2 native ELF one-hop MCP regression...\n'
@@ -130,4 +144,8 @@ UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_one_hop_value_flow_real_binary.py -q
 
 echo
-printf '%s\n' 'Static-analysis expansion (Slices 1-5A + 5B one-hop development) verification completed.'
+if [[ "$REVA_VERIFY_ONE_HOP_NATIVE_ONLY" == 1 ]]; then
+  printf '%s\n' 'Slice 5B targeted real-ELF positive candidate verification completed.'
+else
+  printf '%s\n' 'Static-analysis expansion (Slices 1-5A + 5B one-hop development) verification completed.'
+fi
