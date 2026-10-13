@@ -284,13 +284,25 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 // Even serialization truncation must prevent a top-level
                 // claim that the two evidence graphs are complete.
                 return finish(result, "decompiler_positional_candidate",
-                    Boolean.TRUE.equals(callerEvidence.get("complete")) &&
-                    Boolean.TRUE.equals(calleeEvidence.get("complete")));
+                    completeEvidence(callerEvidence, calleeEvidence));
             }
             finally {
                 decompiler.dispose();
             }
         });
+    }
+
+    /**
+     * Completion is an AND of independently serialized evidence graphs;
+     * a candidate relation does not override either side's truncation.
+     * Package scope allows regression tests with deliberately oversized
+     * synthetic SSA graphs, without relying on compiler optimizations.
+     */
+    static boolean completeEvidence(Map<String, Object> caller,
+            Map<String, Object> callee) {
+        return caller != null && callee != null &&
+            Boolean.TRUE.equals(caller.get("complete")) &&
+            Boolean.TRUE.equals(callee.get("complete"));
     }
 
     private McpSchema.CallToolResult finish(
@@ -341,7 +353,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         return item;
     }
 
-    private static Map<String, Object> sliceEvidence(
+    static Map<String, Object> sliceEvidence(
             Function function, Varnode seed,
             BoundedDataFlowSlice.Result slice) {
         Map<String, Object> evidence = new LinkedHashMap<>();
