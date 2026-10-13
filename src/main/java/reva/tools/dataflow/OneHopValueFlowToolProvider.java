@@ -205,20 +205,44 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
 
                 Parameter[] formals = callee.getParameters();
                 result.put("formalParameterCount", formals.length);
-                if (callee.hasVarArgs() || callee.hasCustomVariableStorage() ||
-                    callee.hasUnknownCallingConventionName()) {
-                    return finish(result, "ambiguous_prototype_or_storage", null);
-                }
+                result.put("calleeCallingConvention", callee.getCallingConventionName());
+                result.put("calleeSignatureSource",
+                    callee.getSignatureSource().toString());
+                boolean variadic = callee.hasVarArgs();
+                boolean customStorage = callee.hasCustomVariableStorage();
+                boolean unknownConvention = callee.hasUnknownCallingConventionName();
+                result.put("calleeVariadic", variadic);
+                result.put("calleeCustomStorage", customStorage);
+                result.put("calleeUnknownCallingConvention", unknownConvention);
                 if (formals.length > MAX_CALL_ARGS) {
                     return finish(result, "unavailable_formal_count_budget", null);
                 }
-                if (argCount != formals.length || argIndex >= formals.length) {
-                    return finish(result, "ambiguous_parameter_count", null);
+                List<String> ambiguities = new ArrayList<>();
+                if (variadic) {
+                    ambiguities.add("variadic");
+                }
+                if (customStorage) {
+                    ambiguities.add("custom_parameter_storage");
+                }
+                if (unknownConvention) {
+                    ambiguities.add("unknown_calling_convention");
                 }
                 for (Parameter formal : formals) {
-                    if (formal.isAutoParameter() || formal.isForcedIndirect()) {
-                        return finish(result, "ambiguous_prototype_or_storage", null);
+                    if (formal.isAutoParameter() &&
+                        !ambiguities.contains("auto_parameter")) {
+                        ambiguities.add("auto_parameter");
                     }
+                    if (formal.isForcedIndirect() &&
+                        !ambiguities.contains("forced_indirect_parameter")) {
+                        ambiguities.add("forced_indirect_parameter");
+                    }
+                }
+                result.put("prototypeAmbiguities", ambiguities);
+                if (!ambiguities.isEmpty()) {
+                    return finish(result, "ambiguous_prototype_or_storage", null);
+                }
+                if (argCount != formals.length || argIndex >= formals.length) {
+                    return finish(result, "ambiguous_parameter_count", null);
                 }
 
                 HighFunction calleeHigh = decompile(decompiler, callee);
