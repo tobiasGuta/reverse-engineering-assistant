@@ -46,14 +46,14 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 import reva.util.AddressUtil;
 
-/** Read-only two-hop MCP regressions with known x86-64 direct-call fixture. */
+/** Read-only two-hop MCP regressions for the x86-32 cdecl test program. */
 public class TwoHopValueFlowToolProviderIntegrationTest
         extends RevaIntegrationTestBase {
     private static final long A = 0x01000300L;
     private static final long B = 0x01000320L;
     private static final long C = 0x01000350L;
-    private static final long A_CALL = A + 4;
-    private static final long B_CALL = B + 7;
+    private static final long A_CALL = A + 6;
+    private static final long B_CALL = B + 10;
 
     private Address addr(long n) {
         return program.getAddressFactory()
@@ -61,16 +61,30 @@ public class TwoHopValueFlowToolProviderIntegrationTest
     }
 
     private String openChain() throws Exception {
-        // A: push rbp; mov rbp,rsp; call B; pop rbp; ret
-        byte[] a = {(byte)0x55,(byte)0x48,(byte)0x89,(byte)0xe5,
-            (byte)0xe8,(byte)0x17,0,0,0,(byte)0x5d,(byte)0xc3};
-        // B: push rbp; mov rbp,rsp; add edi,2; call C; pop rbp; ret
-        byte[] b = {(byte)0x55,(byte)0x48,(byte)0x89,(byte)0xe5,
-            (byte)0x83,(byte)0xc7,(byte)0x02,
-            (byte)0xe8,(byte)0x24,0,0,0,(byte)0x5d,(byte)0xc3};
-        // C: push rbp; mov rbp,rsp; mov eax,edi; add eax,7; pop rbp; ret
-        byte[] c = {(byte)0x55,(byte)0x48,(byte)0x89,(byte)0xe5,
-            (byte)0x89,(byte)0xf8,(byte)0x83,(byte)0xc0,(byte)0x07,
+        // RevaIntegrationTestBase explicitly creates x86:LE:32:default.
+        // Build actual x86-32 cdecl calls using [ebp+8], not x86-64 EDI.
+        // A: push ebp; mov ebp,esp; push [ebp+8]; call B;
+        //    add esp,4; pop ebp; ret
+        // At A+6, the CALL displacement is B-(A+11) = 0x15.
+        byte[] a = {(byte)0x55,(byte)0x89,(byte)0xe5,
+            (byte)0xff,(byte)0x75,(byte)0x08,
+            (byte)0xe8,(byte)0x15,0,0,0,
+            (byte)0x83,(byte)0xc4,(byte)0x04,
+            (byte)0x5d,(byte)0xc3};
+        // B: push ebp; mov ebp,esp; mov eax,[ebp+8]; add eax,2;
+        //    push eax; call C; add esp,4; pop ebp; ret
+        // At B+10, the CALL displacement is C-(B+15) = 0x21.
+        byte[] b = {(byte)0x55,(byte)0x89,(byte)0xe5,
+            (byte)0x8b,(byte)0x45,(byte)0x08,
+            (byte)0x83,(byte)0xc0,(byte)0x02,(byte)0x50,
+            (byte)0xe8,(byte)0x21,0,0,0,
+            (byte)0x83,(byte)0xc4,(byte)0x04,
+            (byte)0x5d,(byte)0xc3};
+        // C: push ebp; mov ebp,esp; mov eax,[ebp+8];
+        //    add eax,7; pop ebp; ret
+        byte[] c = {(byte)0x55,(byte)0x89,(byte)0xe5,
+            (byte)0x8b,(byte)0x45,(byte)0x08,
+            (byte)0x83,(byte)0xc0,(byte)0x07,
             (byte)0x5d,(byte)0xc3};
         int tx = program.startTransaction("two-hop fixture");
         try {
