@@ -199,6 +199,46 @@ public class OneHopValueFlowToolProviderIntegrationTest
     }
 
     @Test
+    public void testSmallSliceBudgetCannotClaimCompleteTraversal() throws Exception {
+        String path = openFixture();
+        JsonNode report = trace(path, CALLER + 4L, 0, 1);
+        assertEquals("decompiler_positional_candidate",
+            report.path("relationStatus").asText());
+        assertEquals(1, report.path("maxOperationsPerSide").asInt());
+        JsonNode callerSide = report.path("callerEvidence");
+        JsonNode calleeSide = report.path("calleeEvidence");
+        assertTrue(callerSide.isObject());
+        assertTrue(calleeSide.isObject());
+        assertTrue(callerSide.path("operationCount").asInt() <= 1);
+        assertTrue(calleeSide.path("operationCount").asInt() <= 1);
+        assertTrue("at least one side must report incomplete coverage",
+            callerSide.path("truncated").asBoolean() ||
+            calleeSide.path("truncated").asBoolean());
+        assertFalse("partial local evidence cannot become a complete one-hop",
+            report.path("complete").asBoolean());
+    }
+
+    @Test
+    public void testCustomStorageCalleeNeverJoins() throws Exception {
+        String path = openFixture();
+        int tx = program.startTransaction("custom one-hop negative control");
+        try {
+            Function callee =
+                program.getFunctionManager().getFunctionAt(address(CALLEE));
+            callee.setCustomVariableStorage(true);
+        }
+        finally {
+            program.endTransaction(tx, true);
+        }
+        JsonNode report = trace(path, CALLER + 4L, 0, 16);
+        assertEquals("ambiguous_prototype_or_storage",
+            report.path("relationStatus").asText());
+        assertTrue(report.path("callerEvidence").isObject());
+        assertTrue(report.path("calleeEvidence").isNull());
+        assertFalse(report.path("complete").asBoolean());
+    }
+
+    @Test
     public void testInvalidArgumentAndOperationLimitFailClosed() throws Exception {
         String path = openFixture();
         withMcpClient(createMcpTransport(), client -> {
