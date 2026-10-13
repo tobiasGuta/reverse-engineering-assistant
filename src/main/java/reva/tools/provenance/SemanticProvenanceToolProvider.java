@@ -25,6 +25,7 @@ import ghidra.app.decompiler.ClangStatement;
 import ghidra.app.decompiler.ClangToken;
 import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.decompiler.component.DecompilerUtils;
 import ghidra.program.model.address.Address;
@@ -978,6 +979,12 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
         decompiler.toggleCCode(true);
         decompiler.toggleSyntaxTree(true);
         decompiler.setSimplificationStyle("decompile");
+
+        // Match get-decompilation exactly: eliminating unreachable code
+        // changes the printed C and therefore its physical line numbers.
+        DecompileOptions options = new DecompileOptions();
+        options.setEliminateUnreachable(false);
+        decompiler.setOptions(options);
 
         if (!decompiler.openProgram(program)) {
             return null;
