@@ -95,8 +95,8 @@ public final class TwoHopValueFlowToolProvider extends AbstractToolProvider {
             Address requested = getAddressFromArgs(request, program, "callsite");
             int argIndex = getInt(request, "argumentIndex");
             int limit = getOptionalInt(request, "maxOperations", DEFAULT_MAX_OPS);
-            int reported = getOptionalInt(
-                request, "maxReportedOperations", DEFAULT_REPORTED_OPS);
+            int reported = getOptionalInt(request,
+                "maxReportedOperations", Math.min(DEFAULT_REPORTED_OPS, limit));
             if (argIndex < 0 || argIndex >= MAX_CALL_ARGS ||
                 limit < 1 || limit > MAX_OPS ||
                 reported < 0 || reported > limit) {
@@ -455,7 +455,7 @@ public final class TwoHopValueFlowToolProvider extends AbstractToolProvider {
         return seeds;
     }
 
-    private record ForwardedArgument(PcodeOp call, int argumentIndex) {}
+    static record ForwardedArgument(PcodeOp call, int argumentIndex) {}
 
     /**
      * Conservative SSA-only propagation through explicitly supported
