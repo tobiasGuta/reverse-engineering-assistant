@@ -5,6 +5,7 @@ import pytest
 from apply_semantic_provenance_slice import (
     ensure_semantic_registration,
     ensure_semantic_transport,
+    patch_context_decompiler_options,
 )
 
 
@@ -59,3 +60,43 @@ def test_inconsistent_registration_fails_closed():
 
     with pytest.raises(RuntimeError, match="Partial or duplicate"):
         ensure_semantic_transport('    "get-decompiler-provenance",\n')
+
+
+
+def test_context_decompiler_options_match_get_decompilation(tmp_path):
+    context = tmp_path / "DecompilationContextUtil.java"
+    original = (
+        "import ghidra.app.decompiler.DecompInterface;\n"
+        "public class DecompilationContextUtil {\n"
+        "  void getLineNumberForAddress() {\n"
+        '        decompiler.setSimplificationStyle("decompile");\n'
+        "  }\n"
+        "  void getDecompilationContext() {\n"
+        '        decompiler.setSimplificationStyle("decompile");\n'
+        "  }\n"
+        "}\n"
+    )
+    context.write_text(original)
+    patch_context_decompiler_options(context)
+    updated = context.read_text()
+    assert updated.count("options.setEliminateUnreachable(false);") == 2
+    assert updated.count("decompiler.setOptions(options);") == 2
+    assert updated.count("import ghidra.app.decompiler.DecompileOptions;") == 1
+    patch_context_decompiler_options(context)
+    assert context.read_text() == updated
+
+
+def test_context_decompiler_options_fail_closed_on_partial_patch(tmp_path):
+    context = tmp_path / "DecompilationContextUtil.java"
+    context.write_text(
+        "import ghidra.app.decompiler.DecompInterface;\n"
+        '        decompiler.setSimplificationStyle("decompile");\n'
+        "        DecompileOptions options = new DecompileOptions();\n"
+        "        options.setEliminateUnreachable(false);\n"
+        "        decompiler.setOptions(options);\n"
+        '        decompiler.setSimplificationStyle("decompile");\n'
+    )
+    original = context.read_text()
+    with pytest.raises(RuntimeError, match="Unexpected"):
+        patch_context_decompiler_options(context)
+    assert context.read_text() == original
