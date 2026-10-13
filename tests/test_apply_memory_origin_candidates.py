@@ -14,6 +14,7 @@ PROVIDER = Path(
     "src/main/java/reva/tools/dataflow/MemoryOriginCandidateToolProvider.java")
 INTEGRATION = Path(
     "src/test.slow/java/reva/tools/dataflow/MemoryOriginCandidateToolProviderIntegrationTest.java")
+NATIVE = Path("tests/test_memory_origin_libcue_real_binary.py")
 MANAGER = Path("src/main/java/reva/server/McpServerManager.java")
 CATALOG = Path("tests/test_mcp_tools.py")
 TWO_HOP = Path(
@@ -51,7 +52,7 @@ class MemoryOriginInstallerTests(unittest.TestCase):
     def test_install_and_reapply_are_idempotent(self):
         first = self.run_installer()
         self.assertEqual(0, first.returncode, first.stderr)
-        for rel in (PROVIDER, INTEGRATION):
+        for rel in (PROVIDER, INTEGRATION, NATIVE):
             self.assertEqual((BUNDLE / rel).read_bytes(),
                              (self.root / rel).read_bytes())
         managed = (self.root / MANAGER).read_text()
@@ -61,7 +62,7 @@ class MemoryOriginInstallerTests(unittest.TestCase):
         self.assertEqual(1, catalog.count('"trace-memory-load-origins"'))
         before = {
             rel: (self.root / rel).read_bytes()
-            for rel in (PROVIDER, INTEGRATION, MANAGER, CATALOG,
+            for rel in (PROVIDER, INTEGRATION, NATIVE, MANAGER, CATALOG,
                         TWO_HOP, BOUNDED)
         }
         again = self.run_installer()
