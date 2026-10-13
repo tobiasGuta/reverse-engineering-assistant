@@ -126,6 +126,13 @@ public class MemoryOriginCandidateToolProviderIntegrationTest
             found);
         assertFalse(result.path("memoryOriginResolved").asBoolean());
         assertEquals(0, result.path("provenReachingDefinitions").asInt());
+        assertTrue(result.path("loadPointerTerm").isObject());
+        assertTrue(result.path("totalStoreOperationsObserved").asInt() >= 1);
+        assertTrue(result.path("storesInLoadMemorySpace").asInt() >= 1);
+        assertTrue(result.path("observedStoreSample").isArray());
+        assertTrue(result.path("observedStoreSample").size() >= 1);
+        assertTrue(result.path("storeSampleSemantics").asText()
+            .contains("NOT candidate reaching definitions"));
         assertTrue(result.path("enumerationComplete").asBoolean());
     }
 
