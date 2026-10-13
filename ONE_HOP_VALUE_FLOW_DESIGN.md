@@ -1,6 +1,6 @@
 # Slice 5B — One-Hop Call-Argument Value Flow
 
-**Status: DEVELOPMENT — full isolated regressions passed 2026-10-12; new positive real-ELF acceptance test committed but NOT YET RUN. NOT FROZEN.**
+**Status: FROZEN (narrow engineering contract) — 2026-10-12.** Full isolated Fedora suite and targeted positive real-ELF O0/O2 candidate gate passed. Remains a development-branch patch, not merged or installed in the stable ReVa/Ghidra MCP environment.
 **Base:** `feat/dataflow-reliability-foundation`, after its narrowly scoped
 engineering freeze. The existing frozen Slices 1–5A and bounded
 intraprocedural dataflow implementation must remain unchanged.
@@ -15,7 +15,7 @@ correlation is unambiguous enough to **propose a candidate link**.
 Neither shared source names nor a matching integer position proves
 runtime value equivalence.
 
-## Proposed first read-only MCP contract
+## Frozen read-only MCP contract
 
 `trace-call-argument-one-hop(programPath, callsite, argumentIndex, maxOperations)`
 
@@ -117,31 +117,48 @@ graphs; it does **not** necessarily show a positive two-sided native-ELF
 candidate. The synthetic Java Ghidra integration tests do require a
 positive candidate with an explicitly defined calling convention.
 
-**Positive native-ELF acceptance gate — implemented, pending Fedora:**
-The updated two-case O0/O2 native regression starts with the original
-ambiguous-auto-analysis observations, then uses upstream ReVa's existing
-`set-function-prototype` tool to supply the original C source signature
-and, inside the disposable PyGhidra MCP project only, its script tool to
-bind Ghidra's imported compiler-spec default calling convention. This is
-an explicitly trusted fixture fact, not inferred by the one-hop tool.
-After that setup, the regression **requires** a complete
-`decompiler_positional_candidate`, distinct caller/callee SSA graphs,
-actual callee consumer operations, and independent first/second argument
-indices. Unknown-convention cases remain fail-closed. The binary's SHA
-is checked before/after, the ELF is never executed, and the normal
-Ghidra installation and Codex MCP service remain untouched.
+**Positive real-ELF gate: PASSED on Fedora (2026-10-12).** The user ran
+`REVA_VERIFY_ONE_HOP_NATIVE_ONLY=1` using the guarded development checkout
+and isolated copied Ghidra 12.1.3 installation. The output reported:
 
-`REVA_VERIFY_ONE_HOP_NATIVE_ONLY=1` on
-`verify_static_analysis_expansion.sh` builds the exact extension in a
-disposable Ghidra copy and runs **only** the updated O0/O2 one-hop test.
-Use this targeted mode since the Java provider and prior complete suites
-were unchanged; it is **not** a substitute for the existing full workflow
-after production Java changes. The positive gate is **NOT YET PASSED**.
-If the new fixture setup does not produce positive evidence, diagnose
-the actual Ghidra result rather than modifying the candidate guard.
+- Installer: Slice 5B refreshed without altering the stable Ghidra/ReVa installation.
+- `buildExtension`: **BUILD SUCCESSFUL in 6s**, 8 actionable tasks.
+- Python 3.13.15 / pytest 8.4.2: `tests/test_one_hop_value_flow_real_binary.py .. [100%]`, **2/2 passed in 11.93s**.
+- Script exit marker: `Slice 5B targeted real-ELF positive candidate verification completed.`
+- The previous full isolated Fedora suite had already passed Java/Ghidra
+  integration and existing MCP, Slice 5A, bounded-dataflow, and Slice 5B
+  native-ELF regressions. Neither the Java provider nor any frozen source
+  provider changed for the targeted follow-up.
 
-Keep the development branch distinct from the normal ReVa/Ghidra
-installation.
+The updated native tests **require** `decompiler_positional_candidate`,
+`complete=true`, and separate complete caller/callee SSA evidence for
+both one-parameter and two-parameter direct calls at `-O0` and `-O2`.
+They also assert true callee consumers, argument/formal slots, a preserved
+candidate-only disclaimer, and unchanged fixture ELF SHA-256.
+
+**Qualification:** The fixture derives the C function declarations from
+its own compiled source; `set-function-prototype` supplies them, and a
+PyGhidra script binds the compiler-spec default calling convention
+**inside the isolated imported Ghidra project**. These are **trusted
+test annotations**, not an ABI discovery capability or runtime trace.
+Unknown conventions remain disallowed. No production one-hop tool
+executes binaries, modifies the Ghidra database, or fabricates a graph
+bridge. The normal Codex MCP server and stable Ghidra installation were
+not changed.
+
+**Freeze decision:** accept the **one-hop, static, read-only,
+candidate-only** call-argument evidence capability. Preserve bounded
+per-side SSA, truthful completeness, explicit ambiguities and strict
+direct-call/prototype eligibility. Reopen on demonstrated correctness,
+safety, performance, or compatibility defects—not to silently expand
+to multi-hop, memory-alias reconstruction, or proven runtime equivalence.
+The acceptance evidence is limited to the recorded Fedora fixtures and
+synthetic Ghidra integration cases; it does not prove behavior for all
+compilers, binaries, calling conventions, or architectures.
+
+**Next engineering work:** separate branch and contract; prioritize
+valuable new reverse-engineering capability or controlled operational
+deployment rather than more Slice 5B verification paperwork.
 
 ## Non-negotiable acceptance tests
 
@@ -162,7 +179,4 @@ installation.
 - No frozen source providers change and no existing stable MCP server
   configuration is modified.
 
-**Go/no-go:** accept only the above bounded evidence feature first;
-do not call it general interprocedural dataflow, and do not freeze unless
-real reverse-engineering use cases show actionable value over manually
-calling the existing tools.
+**Acceptance decision:** the bounded candidate-only API passed its specified positive and negative regression gates and is frozen. Further interprocedural features, operational rollout and analysis beyond this single call boundary require separate authorization and tests.
