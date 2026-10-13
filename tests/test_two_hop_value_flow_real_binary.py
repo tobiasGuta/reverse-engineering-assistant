@@ -52,17 +52,18 @@ int main(int argc, char **argv) {
 """
 
 
+@pytest.mark.parametrize("optimization", ["O0", "O2"])
 async def test_native_two_hop_direct_call_candidate(
-    mcp_stdio_client, isolated_workspace: Path,
+    optimization: str, mcp_stdio_client, isolated_workspace: Path,
 ) -> None:
     compiler = shutil.which("cc")
     assert compiler, "A C compiler is required for native-ELF verification"
-    source = isolated_workspace / "reva_twohop_O0.c"
-    binary = isolated_workspace / "reva_twohop_O0.elf"
+    source = isolated_workspace / f"reva_twohop_{optimization}.c"
+    binary = isolated_workspace / f"reva_twohop_{optimization}.elf"
     source.write_text(C_SOURCE)
     subprocess.run(
         [
-            compiler, "-O0", "-fno-inline",
+            compiler, f"-{optimization}", "-fno-inline",
             "-fno-optimize-sibling-calls", "-fno-pie", "-no-pie",
             "-o", str(binary), str(source),
         ],
