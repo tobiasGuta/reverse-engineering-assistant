@@ -954,7 +954,7 @@ public class SemanticProvenanceToolProvider extends AbstractToolProvider {
      * line in getC(): token text (notably comments) may contain embedded newlines.
      * Never substitute getLineNumber() when the rendered mapping is unavailable.
      */
-    private static Integer tokenDisplayLineNumber(
+    static Integer tokenDisplayLineNumber(
             ClangLine line, int tokenIndex,
             Map<ClangLine, Integer> displayLines) {
         Integer start = displayLines.get(line);
