@@ -106,6 +106,14 @@ async def test_native_one_hop_call_argument(
         assert evidence["operationCount"] <= 128, result
         assert evidence["truncated"] is False, result
         assert evidence["operations"] == repeated[key]["operations"], result
+        assert evidence["operandsTruncated"] is False, result
+        for operation in evidence["operations"]:
+            assert "sequence" in operation, operation
+            assert "inputs" in operation and isinstance(operation["inputs"], list), operation
+            assert "output" in operation, operation
+            assert "inputsTruncated" in operation, operation
+
+    assert result["calleeEvidence"]["ssaSeeds"], result
 
     # Exercise a different argument index and a two-formal callee.
     second_site = await callsite(
