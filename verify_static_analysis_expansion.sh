@@ -42,6 +42,7 @@ git diff --check
   --tests '*StackExecutionStateToolProviderIntegrationTest' \
   --tests '*CallBoundaryToolProviderIntegrationTest' \
   --tests '*BoundedDataFlowSliceIntegrationTest' \
+  --tests '*OneHopValueFlowToolProviderIntegrationTest' \
   --info
 
 # Build the exact extension under test. Python/PyGhidra discovers ReVa as a
@@ -120,5 +121,13 @@ XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
 UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
   uv run --python 3.13 --frozen pytest tests/test_dataflow_reliability_real_binary.py -q
 
+# Verify the one-hop tool against actual compiled direct-call ELF functions,
+# using exactly the scratch Ghidra extension and isolated stdio MCP project.
+printf '\nRunning O0/O2 native ELF one-hop MCP regression...\n'
+GHIDRA_INSTALL_DIR="$SCRATCH_GHIDRA" \
+XDG_CONFIG_HOME="$SCRATCH_ROOT/xdg" \
+UV_PROJECT_ENVIRONMENT=.venv-reva-py313 \
+  uv run --python 3.13 --frozen pytest tests/test_one_hop_value_flow_real_binary.py -q
+
 echo
-printf '%s\n' 'Static-analysis expansion (Slices 1-5A + 5B prerequisite) verification completed.'
+printf '%s\n' 'Static-analysis expansion (Slices 1-5A + 5B one-hop development) verification completed.'
