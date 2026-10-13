@@ -17,6 +17,8 @@ import java.util.Map;
 import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileResults;
 import org.junit.Test;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
@@ -29,6 +31,11 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.ParameterImpl;
 import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.PcodeOpAST;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.pcode.HighSymbol;
+import ghidra.program.model.pcode.HighVariable;
+import ghidra.program.model.pcode.HighParam;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.pcode.VarnodeAST;
 import ghidra.program.model.symbol.SourceType;
@@ -133,6 +140,95 @@ public class TwoHopValueFlowToolProviderIntegrationTest
             });
     }
 
+    /**
+     * Bounded read-only inspection of the intermediate HighFunction when
+     * the real MCP trace has no forwarded argument. Deliberately distinguish
+     * absent P-code CALL, unlinked formal instances, and an operand whose
+     * HighVariable is not the selected parameter.
+     */
+    private String diagnoseIntermediateSsa() {
+        StringBuilder out = new StringBuilder();
+        DecompInterface decompiler = new DecompInterface();
+        decompiler.toggleCCode(false);
+        decompiler.toggleSyntaxTree(true);
+        decompiler.setSimplificationStyle("decompile");
+        try {
+            if (!decompiler.openProgram(program)) {
+                return "could not open Ghidra program";
+            }
+            Function middle = program.getFunctionManager().getFunctionAt(addr(B));
+            DecompileResults results = decompiler.decompileFunction(
+                middle, 30, TaskMonitor.DUMMY);
+            HighFunction high = results == null ? null : results.getHighFunction();
+            if (high == null) {
+                return "intermediate HighFunction unavailable";
+            }
+            if (high.getFunctionPrototype() == null ||
+                high.getFunctionPrototype().getNumParams() < 1) {
+                return "intermediate decompiler prototype missing parameter";
+            }
+            HighSymbol symbol = high.getFunctionPrototype().getParam(0);
+            HighVariable formal = symbol == null ? null : symbol.getHighVariable();
+            out.append(" formal=")
+                .append(formal == null ? "null" : formal.getName());
+            if (formal != null && formal.getInstances() != null) {
+                out.append(" instances=").append(formal.getInstances().length);
+                for (int i = 0; i < Math.min(formal.getInstances().length, 8); i++) {
+                    Varnode node = formal.getInstances()[i];
+                    if (node == null) {
+                        continue;
+                    }
+                    var uses = node.getDescendants();
+                    int count = 0;
+                    while (uses != null && uses.hasNext() && count < 64) {
+                        uses.next();
+                        count++;
+                    }
+                    out.append(" {seed=").append(i)
+                        .append(" addr=").append(node.getAddress())
+                        .append(" size=").append(node.getSize())
+                        .append(" type=").append(node.getClass().getSimpleName())
+                        .append(" uses<=").append(count).append("}");
+                }
+            }
+            var iterator = high.getPcodeOps();
+            int scanned = 0;
+            int pcodeCalls = 0;
+            while (iterator.hasNext() && scanned++ < 1000) {
+                PcodeOpAST op = iterator.next();
+                if (op.getOpcode() != PcodeOp.CALL &&
+                    op.getOpcode() != PcodeOp.CALLIND) {
+                    continue;
+                }
+                pcodeCalls++;
+                out.append(" {call=").append(op.getSeqnum())
+                    .append(" inputs=").append(op.getNumInputs());
+                for (int i = 1; i < Math.min(op.getNumInputs(), 9); i++) {
+                    Varnode arg = op.getInput(i);
+                    HighVariable hv = arg == null ? null : arg.getHigh();
+                    out.append(" [arg=").append(i - 1)
+                        .append(" node=").append(arg == null
+                            ? "null" : arg.getAddress())
+                        .append(" size=").append(arg == null ? -1 : arg.getSize())
+                        .append(" high=").append(hv == null ? "null" : hv.getName())
+                        .append(" sameFormal=").append(hv == formal)
+                        .append(" highParam=").append(hv instanceof HighParam)
+                        .append("]");
+                }
+                out.append("}");
+            }
+            out.append(" pcodeCalls=").append(pcodeCalls)
+                .append(" scannedOps=").append(scanned);
+            return out.toString();
+        }
+        catch (Exception error) {
+            return out + " diagnostic exception=" + error;
+        }
+        finally {
+            decompiler.dispose();
+        }
+    }
+
     @Test
     public void testTwoDirectKnownSignatureCallsPreserveSeparateEvidence()
             throws Exception {
@@ -156,7 +252,8 @@ public class TwoHopValueFlowToolProviderIntegrationTest
                 .path("operationSummary").toString() +
             "; intermediate operations=" +
             result.path("intermediateFormalEvidence")
-                .path("operations").toString(),
+                .path("operations").toString() +
+            "; highFunctionDiagnostic=" + diagnoseIntermediateSsa(),
             candidates.size() > 0);
         boolean found = false;
         for (JsonNode candidate : candidates) {
