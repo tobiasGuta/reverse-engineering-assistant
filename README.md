@@ -16,7 +16,7 @@ Slices 1–3 passed end-to-end verification on Fedora with Ghidra 12.1.3, Java 2
 
 **Slice 4 is frozen as of 2026-10-04.** It passed the complete automated verification path and a final read-only live regression on a real x86-64 ELF. The automated gate also caught and corrected an invalid test assumption around unresolved callee purge: known zero-purge callees preserve a known post-call state, while unresolved purge/calling-convention facts may legitimately yield unknown state. No further Slice 4 contract changes should be made absent new evidence of a generic correctness, safety, or interoperability defect. See `STACK_EXECUTION_STATE_VALIDATION.md` for the frozen invariants and validation record.
 
-## Slice 5B — one-hop call-argument SSA evidence (development; unverified)
+## Slice 5B — one-hop call-argument SSA evidence (isolated Fedora verification passed; not frozen)
 
 The additive `trace-call-argument-one-hop` MCP tool is implemented in
 `OneHopValueFlowToolProvider.java`. It accepts a program, a real machine
@@ -36,9 +36,15 @@ The `apply_one_hop_value_flow.py` installer updates only additive Slice
 5B-owned sources/tests plus guarded tool registration and MCP catalog
 entries in the existing checkout. Synthetic Ghidra integration regressions,
 compiled `-O0`/`-O2` native ELF acceptance cases, and installer safety
-tests have been committed and included in the isolated verifier. **These
-new tests have not yet run on Fedora.** No frozen Slice 1–5A providers or
-the frozen bounded-dataflow helper have been modified.
+tests have passed the complete isolated Fedora verification workflow
+on 2026-10-12: **Ghidra integration passed; MCP transport 3/3; Slice
+5A ELF 2/2; bounded dataflow ELF 2/2; one-hop ELF 2/2**. The native
+one-hop acceptance tests permit either an evidenced candidate or a
+correctly explained unknown prototype, so a positive candidate on an
+imported native ELF is **not yet demonstrated by the supplied output**.
+The capability remains **unfrozen** until it proves useful on a real
+binary with a grounded known signature. No frozen Slice 1–5A providers
+or the bounded-dataflow helper were modified.
 
 See [ONE_HOP_VALUE_FLOW_DESIGN.md](ONE_HOP_VALUE_FLOW_DESIGN.md) for
 scope, candidate-only semantics, limitations and acceptance gates.
@@ -74,8 +80,9 @@ patch**, not a merged or installed production extension. There were no
 changes to frozen Slice 1–5A provider source files.
 
 See [DATAFLOW_RELIABILITY_VALIDATION.md](DATAFLOW_RELIABILITY_VALIDATION.md).
-A later bounded one-hop Slice 5B requires a **separate** scope, code review,
-and live regression. No cross-function flow stitching has been built.
+The separate Slice 5B branch now implements a candidate-only one-hop
+caller/callee relationship; the frozen dataflow foundation itself remains
+strictly intraprocedural and unchanged.
 
 ## Slice 5A — frozen 2026-10-11
 
