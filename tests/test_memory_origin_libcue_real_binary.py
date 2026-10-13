@@ -84,6 +84,20 @@ async def test_known_libcue_parser_stack_load_remains_unresolved_without_proof(
     assert result["matchingStoresObserved"] >= len(
         result["candidateStores"]
     ), result
+    assert result["totalStoreOperationsObserved"] >= (
+        result["storesInLoadMemorySpace"]
+    ), result
+    assert result["storesInLoadMemorySpace"] >= (
+        result["matchingStoresObserved"]
+    ), result
+    assert len(result["observedStoreSample"]) <= 8, result
+    assert result["observedStoreSampleOmitted"] == (
+        result["storesInLoadMemorySpace"] -
+        len(result["observedStoreSample"])
+    ), result
+    assert sum(result["storePointerNormalizationCounts"].values()) == (
+        result["storesInLoadMemorySpace"]
+    ), result
     assert len(result["candidateStores"]) <= 8, result
     assert result["candidateStoresOmitted"] == (
         result["matchingStoresObserved"] - len(result["candidateStores"])
@@ -112,6 +126,14 @@ async def test_known_libcue_parser_stack_load_remains_unresolved_without_proof(
             item["storeAddress"] for item in result["candidateStores"]
         ],
         "memoryOriginResolved": result["memoryOriginResolved"],
+        "loadPointerTerm": result["loadPointerTerm"],
+        "totalStoreOperationsObserved": result["totalStoreOperationsObserved"],
+        "storesInLoadMemorySpace": result["storesInLoadMemorySpace"],
+        "sameOffsetDifferentSsaRootStores":
+            result["sameOffsetDifferentSsaRootStores"],
+        "storePointerNormalizationCounts":
+            result["storePointerNormalizationCounts"],
+        "observedStoreSample": result["observedStoreSample"],
     }
     print("REVA_LIBCUE_MEMORY_ORIGIN=" + json.dumps(report, sort_keys=True))
 
