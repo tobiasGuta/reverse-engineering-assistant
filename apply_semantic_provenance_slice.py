@@ -45,6 +45,65 @@ def copy_slice_file(
     print(f"write {destination}")
 
 
+def patch_incoming_reference_lines(source_path: Path) -> None:
+    """Fix an upstream raw-Clang ordinal exposed as fromLine.
+
+    Only the two known return sites in the pinned context utility are
+    affected. Refuse unknown content rather than editing it speculatively.
+    """
+    original = source_path.read_text()
+    marker = "DecompilationDisplayLines.map(renderedC, clangLines)"
+    if marker in original:
+        print(f"keep  {source_path} (physical-line correction)")
+        return
+
+    old_head = """            ClangTokenGroup markup = decompileResults.getCCodeMarkup();
+            List<ClangLine> clangLines = DecompilerUtils.toLines(markup);
+
+            // Find the line containing this address"""
+    new_head = """            ClangTokenGroup markup = decompileResults.getCCodeMarkup();
+            List<ClangLine> clangLines = DecompilerUtils.toLines(markup);
+            String renderedC = decompileResults.getDecompiledFunction() != null
+                ? decompileResults.getDecompiledFunction().getC() : null;
+            Map<ClangLine, Integer> displayLines =
+                DecompilationDisplayLines.map(renderedC, clangLines);
+
+            // Find the line containing this address"""
+
+    old_exact = """                    if (tokenAddr != null && tokenAddr.equals(address)) {
+                        return clangLine.getLineNumber();
+                    }"""
+    new_exact = """                    if (tokenAddr != null && tokenAddr.equals(address)) {
+                        Integer physical = DecompilationDisplayLines.tokenLine(
+                            clangLine, clangLine.indexOfToken(token), displayLines);
+                        return physical != null ? physical : -1;
+                    }"""
+
+    old_closest = """                    if (closestAddr != null && closestAddr.equals(address)) {
+                        return clangLine.getLineNumber();
+                    }"""
+    new_closest = """                    if (closestAddr != null && closestAddr.equals(address)) {
+                        Integer physical = DecompilationDisplayLines.tokenLine(
+                            clangLine, 0, displayLines);
+                        return physical != null ? physical : -1;
+                    }"""
+
+    updated = original
+    for old, new in [
+        (old_head, new_head),
+        (old_exact, new_exact),
+        (old_closest, new_closest),
+    ]:
+        if updated.count(old) != 1:
+            raise RuntimeError(
+                "Unrecognized upstream DecompilationContextUtil shape; "
+                "refusing physical-line patch"
+            )
+        updated = updated.replace(old, new, 1)
+    source_path.write_text(updated)
+    print(f"edit  {source_path} (verified physical-line correction)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -98,7 +157,10 @@ def main() -> int:
         / "src/test.slow/java/reva/tools/provenance/"
         "SemanticProvenanceToolProviderIntegrationTest.java"
     )
-    if not source_provider.exists() or not source_test.exists():
+    source_helper = (
+        bundle / "src/main/java/reva/util/DecompilationDisplayLines.java"
+    )
+    if not source_provider.exists() or not source_test.exists() or not source_helper.exists():
         print("error: Slice 3 bundle files are missing", file=sys.stderr)
         return 2
 
@@ -115,6 +177,15 @@ def main() -> int:
         / "src/test.slow/java/reva/tools/provenance/"
         "SemanticProvenanceToolProviderIntegrationTest.java",
         args.refresh,
+    )
+
+    copy_slice_file(
+        source_helper,
+        repo / "src/main/java/reva/util/DecompilationDisplayLines.java",
+        args.refresh,
+    )
+    patch_incoming_reference_lines(
+        repo / "src/main/java/reva/util/DecompilationContextUtil.java"
     )
 
     manager_text = replace_once(
