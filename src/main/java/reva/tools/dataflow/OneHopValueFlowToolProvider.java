@@ -176,7 +176,9 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 result.put("callerArgument", describeNode(argument));
                 BoundedDataFlowSlice.Result callerSlice = BoundedDataFlowSlice.collect(
                     List.of(argument), BoundedDataFlowSlice.Direction.BACKWARD, maxOps);
-                result.put("callerEvidence", sliceEvidence(caller, argument, callerSlice));
+                Map<String, Object> callerEvidence =
+                    sliceEvidence(caller, argument, callerSlice);
+                result.put("callerEvidence", callerEvidence);
 
                 if (call.getOpcode() == PcodeOp.CALLIND) {
                     return finish(result, "unavailable_indirect_target", null);
@@ -270,13 +272,20 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                     formals[argIndex].getVariableStorage().toString());
                 formalEvidence.put("ssaInstanceCount", seeds.size());
                 result.put("calleeFormal", formalEvidence);
-                result.put("calleeEvidence",
-                    sliceEvidence(callee, seeds.get(0), calleeSlice));
+                Map<String, Object> calleeEvidence =
+                    sliceEvidence(callee, seeds.get(0), calleeSlice);
+                List<Map<String, Object>> seedNodes = new ArrayList<>();
+                for (Varnode node : seeds) {
+                    seedNodes.add(describeNode(node));
+                }
+                calleeEvidence.put("ssaSeeds", seedNodes);
+                result.put("calleeEvidence", calleeEvidence);
 
-                // A candidate is possible even when one local graph is
-                // partial. The top-level completeness then stays false.
+                // Even serialization truncation must prevent a top-level
+                // claim that the two evidence graphs are complete.
                 return finish(result, "decompiler_positional_candidate",
-                    !callerSlice.truncated() && !calleeSlice.truncated());
+                    Boolean.TRUE.equals(callerEvidence.get("complete")) &&
+                    Boolean.TRUE.equals(calleeEvidence.get("complete")));
             }
             finally {
                 decompiler.dispose();
@@ -338,6 +347,8 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("function", identity(function));
         evidence.put("seed", describeNode(seed));
+        // Completion is finalized after output serialization, because
+        // large P-code operands may have to be capped independently.
         evidence.put("complete", !slice.truncated());
         evidence.put("truncated", slice.truncated());
         evidence.put("truncationReason", slice.truncationReason());
@@ -345,6 +356,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
         evidence.put("scannedEdges", slice.scannedEdges());
         evidence.put("operationCount", slice.operations().size());
         List<Map<String, Object>> operations = new ArrayList<>();
+        boolean operandsTruncated = false;
         for (PcodeOp op : slice.operations()) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("sequence", op.getSeqnum().toString());
@@ -354,6 +366,7 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
             item.put("inputCount", op.getNumInputs());
             item.put("inputsTruncated",
                 op.getNumInputs() > MAX_SERIALIZED_INPUTS_PER_OP);
+            operandsTruncated |= op.getNumInputs() > MAX_SERIALIZED_INPUTS_PER_OP;
             List<Map<String, Object>> inputs = new ArrayList<>();
             for (int i = 0; i < Math.min(op.getNumInputs(),
                     MAX_SERIALIZED_INPUTS_PER_OP); i++) {
@@ -366,6 +379,14 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
             operations.add(item);
         }
         evidence.put("operations", operations);
+        evidence.put("operandsTruncated", operandsTruncated);
+        if (operandsTruncated) {
+            evidence.put("complete", false);
+            evidence.put("truncated", true);
+            if (!slice.truncated()) {
+                evidence.put("truncationReason", "serialized_input_budget");
+            }
+        }
         return evidence;
     }
 }
