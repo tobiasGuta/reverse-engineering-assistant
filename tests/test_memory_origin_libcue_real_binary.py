@@ -131,7 +131,7 @@ async def test_known_libcue_parser_stack_load_remains_unresolved_without_proof(
         assert related["relation"] == (
             "same_ssa_base_distinct_static_offset"
         ), related
-        assert related["sameMemoryAddress"] is False, related
+        assert related["sameStaticAddressExpression"] is False, related
         assert related["reachingDefinition"] == "unproven", related
         assert related["relativeOffsetBytes"] == 24, related
 
