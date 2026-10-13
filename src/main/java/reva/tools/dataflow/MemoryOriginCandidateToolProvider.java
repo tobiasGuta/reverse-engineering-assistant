@@ -179,6 +179,9 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                 int totalStores = 0;
                 int storesInLoadSpace = 0;
                 int sameOffsetDifferentRoot = 0;
+                int sameRootDifferentOffset = 0;
+                List<Map<String, Object>> sameBaseDifferentOffsetStores =
+                    new ArrayList<>();
                 Map<String, Integer> pointerKinds = new LinkedHashMap<>();
                 List<Map<String, Object>> observedStoreSample = new ArrayList<>();
                 int scanned = 0;
@@ -212,6 +215,25 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                         storePointer.root() != null &&
                         loadPointer.offset() == storePointer.offset()) {
                         sameOffsetDifferentRoot++;
+                    }
+                    if (sameBaseDifferentOffset(loadPointer, storePointer)) {
+                        sameRootDifferentOffset++;
+                        if (sameBaseDifferentOffsetStores.size() < MAX_CANDIDATES) {
+                            Map<String, Object> related = new LinkedHashMap<>();
+                            related.put("storeAddress",
+                                AddressUtil.formatAddress(op.getSeqnum().getTarget()));
+                            related.put("storeSequence", op.getSeqnum().toString());
+                            related.put("loadOffsetBytes", loadPointer.offset());
+                            related.put("storeOffsetBytes", storePointer.offset());
+                            related.put("relativeOffsetBytes",
+                                storePointer.offset() - loadPointer.offset());
+                            related.put("storedWidthBytes", op.getInput(2).getSize());
+                            related.put("relation",
+                                "same_ssa_base_distinct_static_offset");
+                            related.put("sameMemoryAddress", false);
+                            related.put("reachingDefinition", "unproven");
+                            sameBaseDifferentOffsetStores.add(related);
+                        }
                     }
                     if (observedStoreSample.size() < MAX_CANDIDATES) {
                         Map<String, Object> sample = new LinkedHashMap<>();
@@ -263,6 +285,17 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                 result.put("storesInLoadMemorySpace", storesInLoadSpace);
                 result.put("sameOffsetDifferentSsaRootStores",
                     sameOffsetDifferentRoot);
+                result.put("sameBaseDifferentOffsetStoreCount",
+                    sameRootDifferentOffset);
+                result.put("sameBaseDifferentOffsetStores",
+                    sameBaseDifferentOffsetStores);
+                result.put("sameBaseDifferentOffsetStoresOmitted",
+                    sameRootDifferentOffset - sameBaseDifferentOffsetStores.size());
+                result.put("sameBaseDifferentOffsetSemantics",
+                    "Related SSA pointer base, DIFFERENT constant displacement. " +
+                    "The locations are not statically equal; parser stack " +
+                    "movement, loop iteration and aliases are NOT resolved. " +
+                    "These are investigative leads, never reaching definitions.");
                 result.put("storePointerNormalizationCounts", pointerKinds);
                 result.put("observedStoreSample", observedStoreSample);
                 result.put("observedStoreSampleOmitted",
@@ -314,6 +347,17 @@ public final class MemoryOriginCandidateToolProvider extends AbstractToolProvide
                 pointer.root().getDef().getSeqnum().toString());
         }
         return value;
+    }
+
+    /**
+     * A related pointer-expression lead only, NOT a matching LOAD/STORE
+     * address and NOT a memory reaching definition. Syntactic SSA identity
+     * is local to this decompilation and says nothing about runtime state.
+     */
+    static boolean sameBaseDifferentOffset(PointerKey a, PointerKey b) {
+        return a != null && b != null &&
+            a.root() != null && a.root() == b.root() &&
+            a.offset() != b.offset();
     }
 
     /** Same SSA base and same constant offset, never a general alias claim. */
