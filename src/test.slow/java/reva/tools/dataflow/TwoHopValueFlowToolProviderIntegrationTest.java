@@ -147,7 +147,17 @@ public class TwoHopValueFlowToolProviderIntegrationTest
         assertTrue(result.path("semantics").asText()
             .contains("NO proven runtime"));
         JsonNode candidates = result.path("candidateSecondHops");
-        assertTrue("B should forward its parameter to C", candidates.size() > 0);
+        assertTrue("B should forward its parameter to C; status=" +
+            result.path("secondBoundaryStatus").asText() +
+            "; observedForwardedArgumentCount=" +
+            result.path("observedForwardedArgumentCount").asText() +
+            "; intermediate summary=" +
+            result.path("intermediateFormalEvidence")
+                .path("operationSummary").toString() +
+            "; intermediate operations=" +
+            result.path("intermediateFormalEvidence")
+                .path("operations").toString(),
+            candidates.size() > 0);
         boolean found = false;
         for (JsonNode candidate : candidates) {
             if ("decompiler_positional_candidate".equals(
