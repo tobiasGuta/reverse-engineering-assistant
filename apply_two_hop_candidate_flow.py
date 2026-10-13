@@ -25,9 +25,12 @@ BOUNDED = Path("src/main/java/reva/tools/dataflow/BoundedDataFlowSlice.java")
 
 
 def guarded_registration(original: str, old: str, new: str, label: str) -> str:
-    # The old registration is itself a substring of the expanded one.
-    if original.count(new) == 1 and original.count(old) == 1:
-        return original
+    # Imports/catalog entries contain the old marker, while the
+    # expanded constructor replaces it. Handle both shapes idempotently.
+    if original.count(new) == 1:
+        if original.count(old) <= 1:
+            return original
+        raise RuntimeError(f"{label}: duplicate previous registration")
     if original.count(old) != 1 or original.count(new) != 0:
         raise RuntimeError(f"{label}: unrecognized/partial registration")
     return original.replace(old, new, 1)
