@@ -205,6 +205,9 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                     callee.hasUnknownCallingConventionName()) {
                     return finish(result, "ambiguous_prototype_or_storage", null);
                 }
+                if (formals.length > MAX_CALL_ARGS) {
+                    return finish(result, "unavailable_formal_count_budget", null);
+                }
                 if (argCount != formals.length || argIndex >= formals.length) {
                     return finish(result, "ambiguous_parameter_count", null);
                 }
@@ -217,6 +220,9 @@ public final class OneHopValueFlowToolProvider extends AbstractToolProvider {
                 HighFunction calleeHigh = decompile(decompiler, callee);
                 if (calleeHigh == null) {
                     return finish(result, "unavailable_callee_decompilation", null);
+                }
+                if (calleeHigh.getFunctionPrototype() == null) {
+                    return finish(result, "unavailable_decompiler_prototype", null);
                 }
                 int inferredParams = calleeHigh.getFunctionPrototype().getNumParams();
                 result.put("decompilerParameterCount", inferredParams);
